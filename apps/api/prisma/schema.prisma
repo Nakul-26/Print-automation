@@ -89,6 +89,7 @@ model Shop {
   updatedAt         DateTime   @updatedAt @map("updated_at")
 
   members ShopMember[]
+  uploads Upload[]
 
   @@map("shops")
 }
@@ -121,4 +122,42 @@ model AuditLog {
   @@index([shopId, createdAt])
   @@index([actorId, createdAt])
   @@map("audit_log")
+}
+
+enum UploadStatus {
+  processing
+  ready
+  failed
+}
+
+/// A document a student uploaded to a shop, before it becomes part of an order.
+/// The unguessable access token is only ever stored as an HMAC.
+model Upload {
+  id                  String       @id @default(uuid()) @db.Uuid
+  shopId              String       @map("shop_id") @db.Uuid
+  tokenHash           String       @unique @map("token_hash")
+  originalName        String       @map("original_name")
+  detectedMime        String       @map("detected_mime")
+  sizeBytes           Int          @map("size_bytes")
+  contentSha256       String       @map("content_sha256")
+  status              UploadStatus @default(processing)
+  errorCode           String?      @map("error_code")
+  errorMessage        String?      @map("error_message")
+  pageCount           Int?         @map("page_count")
+  originalKey         String?      @map("original_key")
+  normalizedKey       String?      @map("normalized_key")
+  normalizedSizeBytes Int?         @map("normalized_size_bytes")
+  /// How an Office document was converted (paper size, slides per page, ...). Phase 3.
+  conversionSettings  Json?        @map("conversion_settings")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  /// Files are deleted after this time (24 h from creation by default).
+  expiresAt           DateTime     @map("expires_at")
+  filesPurgedAt       DateTime?    @map("files_purged_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+  @@index([expiresAt])
+  @@map("uploads")
 }

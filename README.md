@@ -6,12 +6,16 @@ Multi-shop print-order platform. Students upload documents and choose print sett
 
 - Node.js 22+ (see `.nvmrc`), pnpm 11, Docker
 
+Ghostscript runs inside the `print-tools` container in development (`GS_COMMAND=docker exec -i print-tools gs` in `apps/api/.env`), so nothing needs installing on Windows. In production images and CI, `gs` is installed directly.
+
+Note: the API defaults to port 4000; set `PORT` if another project already uses it.
+
 ## Getting started
 
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env   # then set SESSION_SECRET (32+ chars)
-pnpm db:up                               # start local PostgreSQL
+pnpm db:up                               # start local PostgreSQL + the Ghostscript tools container
 pnpm --filter @print/api prisma migrate dev
 pnpm dev                                 # API on :4000, web on :5173
 ```

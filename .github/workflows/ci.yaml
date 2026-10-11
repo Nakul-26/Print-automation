@@ -28,6 +28,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - name: Install Ghostscript
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ghostscript
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @print/api prisma migrate deploy
       - run: pnpm format:check

@@ -10,7 +10,7 @@ import { createTestContext, PASSWORD, resetDatabase, seedShop } from './helpers.
 const ctx = createTestContext();
 
 beforeEach(() => resetDatabase(ctx.db));
-afterAll(() => ctx.db.$disconnect());
+afterAll(() => ctx.close());
 
 async function signIn(email: string) {
   const agent = request.agent(ctx.app);

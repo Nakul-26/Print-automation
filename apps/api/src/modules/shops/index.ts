@@ -21,6 +21,8 @@ export function createShops(deps: { db: Db; audit: Audit; requireAuth: RequestHa
     }),
     /** Middleware for any route under /…/:shopId/…; sets req.tenant. Run after requireAuth. */
     requireShopAccess: shopAccess,
+    /** Public lookup used by student-facing routes (no membership required). */
+    findBySlug: repo.findBySlug,
     createShop: service.createShop,
     addMember: service.addMember,
   };

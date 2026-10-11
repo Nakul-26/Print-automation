@@ -25,6 +25,13 @@ export const ApiEnvSchema = z.object({
     .int()
     .positive()
     .default(20 * 1024 * 1024),
+  /** Command that runs Ghostscript (stdin -> stdout). Dev on Windows: 'docker exec -i print-tools gs'. */
+  GS_COMMAND: z.string().min(1).default('gs'),
+  GS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  MAX_PDF_PAGES: z.coerce.number().int().positive().default(500),
+  /** Max uploads per IP per 15 minutes. */
+  UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(168),
   /** Max login attempts per IP per 15 minutes. */
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),

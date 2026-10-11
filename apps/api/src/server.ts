@@ -12,12 +12,16 @@ async function main(): Promise<void> {
   const logger = createLogger(env.LOG_LEVEL);
   const db = createDb(env.DATABASE_URL);
   const container = createContainer({ env, logger, db });
+  await container.start();
 
   const app = createApp({
     env,
     logger,
     container,
-    readinessChecks: [{ name: 'database', run: () => db.$queryRaw`SELECT 1` }],
+    readinessChecks: [
+      { name: 'database', run: () => db.$queryRaw`SELECT 1` },
+      { name: 'ghostscript', run: () => container.conversion.checkTools() },
+    ],
   });
   const server = createServer(app);
 
@@ -34,7 +38,10 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'shutting down');
     clearInterval(purgeTimer);
     server.close(() => {
-      void db.$disconnect().finally(() => process.exit(0));
+      void container
+        .stop()
+        .then(() => db.$disconnect())
+        .finally(() => process.exit(0));
     });
     setTimeout(() => process.exit(1), 10_000).unref();
   };

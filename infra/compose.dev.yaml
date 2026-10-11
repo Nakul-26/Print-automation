@@ -19,5 +19,14 @@ services:
       timeout: 3s
       retries: 10
 
+  # Ghostscript for PDF normalisation, grayscale and n-up. The API pipes documents through
+  # `docker exec -i print-tools gs ...` when GS_COMMAND is set accordingly (see .env.example).
+  tools:
+    build:
+      context: .
+      dockerfile: tools.Dockerfile
+    container_name: print-tools
+    restart: unless-stopped
+
 volumes:
   pgdata:

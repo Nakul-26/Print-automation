@@ -5,7 +5,7 @@ import { createTestContext, PASSWORD, resetDatabase, seedShop } from './helpers.
 const ctx = createTestContext();
 
 beforeEach(() => resetDatabase(ctx.db));
-afterAll(() => ctx.db.$disconnect());
+afterAll(() => ctx.close());
 
 async function login(email: string, password = PASSWORD) {
   const agent = request.agent(ctx.app);
@@ -138,7 +138,7 @@ describe('abuse protection', () => {
       expect(statuses.slice(0, 3)).toEqual([401, 401, 401]);
       expect(statuses.slice(3)).toEqual([429, 429]);
     } finally {
-      await limited.db.$disconnect();
+      await limited.close();
     }
   });
 

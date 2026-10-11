@@ -10,3 +10,6 @@ coverage
 .DS_Store
 /data
 apps/api/src/generated
+
+.scratch
+apps/api/data
