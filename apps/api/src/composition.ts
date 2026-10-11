@@ -20,6 +20,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
   const queue = new PgBossQueue(env.DATABASE_URL, logger);
   const conversion = createConversion({
     gs: { command: env.GS_COMMAND, timeoutMs: env.GS_TIMEOUT_MS },
+    office: { command: env.OFFICE_COMMAND, timeoutMs: env.OFFICE_TIMEOUT_MS },
     maxPages: env.MAX_PDF_PAGES,
   });
 

@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+
+# ---- build: install, generate the Prisma client, bundle the API, extract production deps ----
+FROM node:22-bookworm-slim AS build
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN npm install -g pnpm@11.20.0
+WORKDIR /repo
+COPY . .
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+RUN pnpm --filter @print/api build
+# Production-only node_modules for the API (workspace packages are bundled into dist).
+RUN pnpm --filter @print/api deploy --legacy --prod /out
+
+# ---- runtime: Node + Ghostscript + LibreOffice ----
+FROM node:22-bookworm-slim AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ghostscript \
+      libreoffice-writer libreoffice-calc libreoffice-impress \
+      python3 python3-uno \
+      fonts-liberation fonts-dejavu-core fonts-crosextra-carlito fonts-crosextra-caladea \
+      fonts-noto-core \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production \
+    PORT=4000 \
+    TRUST_PROXY=true \
+    STORAGE_ROOT=/data \
+    GS_COMMAND=gs \
+    OFFICE_COMMAND="python3 /opt/print-convert/convert.py" \
+    HOME=/tmp/home
+
+WORKDIR /app
+COPY --from=build /out/node_modules ./node_modules
+COPY --from=build /out/package.json ./package.json
+COPY --from=build /repo/apps/api/dist ./dist
+COPY --from=build /repo/apps/api/prisma ./prisma
+COPY --from=build /repo/apps/api/prisma.config.ts ./prisma.config.ts
+COPY infra/office/convert.py /opt/print-convert/convert.py
+COPY infra/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+ && mkdir -p /data /tmp/home \
+ && chown -R node:node /data /tmp/home /app
+USER node
+VOLUME ["/data"]
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "dist/server.js"]

@@ -1,0 +1,7 @@
+# Local override to try the production images on your machine:
+#   docker compose --env-file infra/.env.local -f infra/compose.prod.yaml -f infra/compose.prod.local.yaml up --build
+# then open http://localhost:8080
+services:
+  web:
+    ports:
+      - '127.0.0.1:8080:80'

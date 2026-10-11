@@ -302,20 +302,20 @@ Both are **ORMs / database toolkits**: they let your TypeScript code read and wr
 
 Each phase ends with something demonstrable and its tests green. Estimated total: about **14-18 weeks** for one developer, which is realistic given the larger scope.
 
-**Phase 0: Foundations (1-2 weeks)**
+**Phase 0: Foundations (1-2 weeks) — DONE**
 Also in this phase (in parallel, owned by you and your friends, not blocking development): register a Microsoft Partner Center developer account for Store distribution of the print agent, and confirm individual registration is possible in India. Until it is ready, the pilot uses the manual installer (Track B).
 Monorepo (pnpm + Turborepo), TypeScript, ESLint, boundary rules, CI, Docker dev environment (Postgres), env config, logger, health endpoints, Prisma setup, first migration, docs skeleton and ADRs.
 Exit: one command runs everything; CI is green on an empty vertical slice.
 
-**Phase 1: Identity, tenancy, roles (1-2 weeks)**
+**Phase 1: Identity, tenancy, roles (1-2 weeks) — DONE**
 Users, shops, membership, sessions, password hashing, RBAC, tenant context, seed/admin CLI, audit logging foundation, owner login UI.
 Exit: owner A can never read shop B (automated isolation tests).
 
-**Phase 2: Storage and document pipeline for PDF and images (2 weeks)**
+**Phase 2: Storage and document pipeline for PDF and images (2 weeks) — DONE**
 `StorageDriver`, upload validation (magic bytes, size, count), job queue + worker, PDF page counting, page-range parser, image→PDF, print-PDF builder (range, n-up, grayscale), previews with signed short-lived links.
 Exit: bad/corrupt/huge/encrypted files are rejected safely; B&W output verified grayscale.
 
-**Phase 3: Office conversion with settings and preview (2-3 weeks)**
+**Phase 3: Office conversion with settings and preview (2-3 weeks) — DONE (font-substitution warnings still to do)**
 LibreOffice worker image with fonts, sandbox and limits, conversion settings per type, re-conversion with caching, font-substitution warnings, preview UI with "confirm" step.
 Exit: DOCX/PPTX/XLSX samples convert with adjustable settings; page count reflects the confirmed preview.
 

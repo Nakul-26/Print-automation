@@ -96,3 +96,74 @@ export async function gsAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------------------
+// Office fixtures
+// ---------------------------------------------------------------------------------------
+
+export const OFFICE_COMMAND =
+  process.env['OFFICE_COMMAND'] ?? 'python3 /opt/print-convert/convert.py';
+
+/** A text document that runs to several A4 pages. */
+export async function makeDocx(paragraphs = 120): Promise<Buffer> {
+  const { Document, Packer, Paragraph, TextRun } = await import('docx');
+  const children = Array.from(
+    { length: paragraphs },
+    (_, i) =>
+      new Paragraph({
+        children: [
+          new TextRun(`Line ${i + 1}: The quick brown fox jumps over the lazy dog. `.repeat(2)),
+        ],
+      }),
+  );
+  return Buffer.from(await Packer.toBuffer(new Document({ sections: [{ children }] })));
+}
+
+/** One wide sheet (25 columns), so "actual size" spills across several pages. */
+export async function makeXlsx(): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Data');
+  for (let r = 1; r <= 30; r++) {
+    ws.addRow(Array.from({ length: 25 }, (_, c) => `R${r}C${c + 1} some text`));
+  }
+  for (let c = 1; c <= 25; c++) ws.getColumn(c).width = 14;
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+/** Three slides: the second is hidden; every slide has speaker notes. */
+export async function makePptx(): Promise<Buffer> {
+  const PptxGenJS = (await import('pptxgenjs')).default;
+  const pptx = new PptxGenJS();
+  for (let i = 1; i <= 3; i++) {
+    const slide = pptx.addSlide();
+    slide.addText(`Slide ${i}`, { x: 1, y: 1, fontSize: 32 });
+    slide.addNotes(`Notes for slide ${i}`);
+    if (i === 2) (slide as unknown as { hidden: boolean }).hidden = true;
+  }
+  return Buffer.from((await pptx.write({ outputType: 'nodebuffer' })) as Buffer);
+}
+
+/** The header of an old binary Office file (.doc/.xls/.ppt share this container). */
+export const LEGACY_OFFICE = Buffer.concat([
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  Buffer.alloc(600),
+]);
+
+export async function officeAvailable(): Promise<boolean> {
+  try {
+    const { convertOffice } = await import('../src/modules/conversion/office.js');
+    await convertOffice(
+      { command: OFFICE_COMMAND, timeoutMs: 60_000 },
+      {
+        bytes: await makeDocx(1),
+        family: 'writer',
+        ext: 'docx',
+        settings: { paperSize: 'A4', orientation: 'auto', margins: 'document' },
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}

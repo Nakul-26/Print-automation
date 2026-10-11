@@ -3,3 +3,4 @@ export * from './order.js';
 export * from './identity.js';
 export * from './shops.js';
 export * from './uploads.js';
+export * from './office.js';

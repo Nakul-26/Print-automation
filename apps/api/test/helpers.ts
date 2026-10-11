@@ -31,6 +31,7 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
     UPLOAD_RATE_LIMIT_MAX: '1000',
     STORAGE_ROOT: storageRoot,
     GS_COMMAND: process.env['GS_COMMAND'] ?? 'gs',
+    OFFICE_COMMAND: process.env['OFFICE_COMMAND'] ?? 'python3 /opt/print-convert/convert.py',
     ...overrides,
   });
   const logger = createLogger(process.env['TEST_LOG_LEVEL'] ?? 'silent');

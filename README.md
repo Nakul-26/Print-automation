@@ -48,3 +48,17 @@ packages/       contracts (zod schemas), domain (pure rules), config (env)
 infra/          Docker/compose files
 docs/           ADRs and runbooks
 ```
+
+## Production images
+
+Everything ships as containers: `web` (nginx), `api` (Node + Ghostscript + LibreOffice), and `postgres`, defined in `infra/compose.prod.yaml`.
+
+Try the production stack locally:
+
+```bash
+cp infra/.env.production.example infra/.env.local   # then edit the values
+docker compose --env-file infra/.env.local -f infra/compose.prod.yaml -f infra/compose.prod.local.yaml up --build
+# open http://localhost:8080
+```
+
+Deploying with Dokploy: create a Compose application from this repository, set the compose path to `infra/compose.prod.yaml`, enter the variables from `infra/.env.production.example` in the Environment tab, and attach your domain to the `web` service on port 80. See `docs/adr/0005-office-conversion-and-containers.md`.

@@ -4,7 +4,11 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import multer, { MulterError } from 'multer';
-import { UPLOAD_TOKEN_PATTERN, type CreateUploadResponse } from '@print/contracts';
+import {
+  ConversionRequest,
+  UPLOAD_TOKEN_PATTERN,
+  type CreateUploadResponse,
+} from '@print/contracts';
 import { HttpError } from '../../../platform/http/error-handler.js';
 import { toView, type UploadService } from '../service/upload-service.js';
 
@@ -20,6 +24,7 @@ export function createUploadsRouter(deps: {
   tempDir: string;
   maxUploadBytes: number;
   rateLimitMax: number;
+  convertRateLimitMax: number;
 }): Router {
   const router = Router();
 
@@ -30,6 +35,15 @@ export function createUploadsRouter(deps: {
     legacyHeaders: false,
     handler: (_req, _res, next) =>
       next(new HttpError(429, 'Too many uploads, please wait a few minutes', 'rate_limited')),
+  });
+
+  const convertLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: deps.convertRateLimitMax,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: (_req, _res, next) =>
+      next(new HttpError(429, 'Too many changes, please wait a few minutes', 'rate_limited')),
   });
 
   const upload = multer({
@@ -104,6 +118,16 @@ export function createUploadsRouter(deps: {
     const found = await deps.uploads.getByToken(tokenParam(req.params['token']));
     res.set('Cache-Control', 'no-store');
     res.json(toView(found));
+  });
+
+  router.post('/uploads/:token/conversion', convertLimiter, async (req, res) => {
+    const body = ConversionRequest.parse(req.body);
+    const updated = await deps.uploads.changeConversion(
+      tokenParam(req.params['token']),
+      body.settings,
+    );
+    res.set('Cache-Control', 'no-store');
+    res.json(toView(updated));
   });
 
   router.get('/uploads/:token/preview', async (req, res) => {

@@ -3,17 +3,34 @@ import { createReadStream } from 'node:fs';
 import { open, rm } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { UploadView } from '@print/contracts';
+import {
+  defaultOfficeSettings,
+  OFFICE_SETTINGS_SCHEMAS,
+  type OfficeFamily,
+  type OfficeSettings,
+  type UploadView,
+} from '@print/contracts';
 import { HttpError } from '../../../platform/http/error-handler.js';
 import type { Logger } from '../../../platform/observability/logger.js';
 import type { JobQueue } from '../../../platform/queue/index.js';
 import type { StorageDriver } from '../../../platform/storage/index.js';
-import { ProcessingError, type Conversion } from '../../conversion/index.js';
-import type { UploadRecord, UploadRepo } from '../repo/upload-repo.js';
+import {
+  ProcessingError,
+  UNSUPPORTED_LEGACY_MESSAGE,
+  type Conversion,
+} from '../../conversion/index.js';
+import type { ConversionVariants, UploadRecord, UploadRepo } from '../repo/upload-repo.js';
 
 export const PROCESS_UPLOAD_JOB = 'document.process-upload';
 
-const HEAD_BYTES = 4100; // enough for content sniffing
+export interface ProcessUploadJob {
+  uploadId: string;
+  /** The conversion revision this job was queued for; stale jobs are ignored. */
+  revision: number;
+}
+
+/** ZIP-based Office files list their parts near the start; the first entry can be large. */
+const SNIFF_BYTES = 512 * 1024;
 
 export interface UploadServiceDeps {
   repo: UploadRepo;
@@ -43,12 +60,32 @@ export function toView(upload: UploadRecord): UploadView {
     id: upload.id,
     status: upload.status,
     originalName: upload.originalName,
+    documentKind: upload.documentKind,
+    officeFamily: upload.officeFamily,
+    conversionSettings: upload.conversionSettings,
+    revision: upload.conversionRevision,
     pageCount: upload.pageCount,
     errorCode: upload.errorCode,
     errorMessage: upload.errorMessage,
     createdAt: upload.createdAt.toISOString(),
     expiresAt: upload.expiresAt.toISOString(),
   };
+}
+
+/** JSON with sorted keys, so equal settings always hash equally. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function settingsHash(settings: OfficeSettings): string {
+  return createHash('sha256').update(canonicalJson(settings)).digest('hex').slice(0, 16);
 }
 
 export function createUploadService(deps: UploadServiceDeps) {
@@ -61,8 +98,8 @@ export function createUploadService(deps: UploadServiceDeps) {
   async function readHead(path: string): Promise<Buffer> {
     const handle = await open(path, 'r');
     try {
-      const buf = Buffer.alloc(HEAD_BYTES);
-      const { bytesRead } = await handle.read(buf, 0, HEAD_BYTES, 0);
+      const buf = Buffer.alloc(SNIFF_BYTES);
+      const { bytesRead } = await handle.read(buf, 0, SNIFF_BYTES, 0);
       return buf.subarray(0, bytesRead);
     } finally {
       await handle.close();
@@ -75,9 +112,33 @@ export function createUploadService(deps: UploadServiceDeps) {
     return hash.digest('hex');
   }
 
-  async function removeFiles(upload: Pick<UploadRecord, 'originalKey' | 'normalizedKey'>) {
-    if (upload.originalKey) await storage.delete(upload.originalKey);
-    if (upload.normalizedKey) await storage.delete(upload.normalizedKey);
+  async function removeFiles(upload: UploadRecord): Promise<void> {
+    const keys = new Set<string>();
+    if (upload.originalKey) keys.add(upload.originalKey);
+    if (upload.normalizedKey) keys.add(upload.normalizedKey);
+    for (const variant of Object.values(upload.conversionVariants ?? {})) keys.add(variant.key);
+    for (const key of keys) await storage.delete(key);
+  }
+
+  function parseSettings(family: OfficeFamily, raw: unknown): OfficeSettings {
+    const parsed = OFFICE_SETTINGS_SCHEMAS[family].safeParse(raw ?? {});
+    if (!parsed.success) {
+      throw new HttpError(400, 'Those conversion settings are not valid', 'invalid_settings');
+    }
+    return parsed.data;
+  }
+
+  /** Settings recorded for the variant that is currently shown, used to undo a failed change. */
+  function activeSettings(upload: UploadRecord): Record<string, unknown> {
+    const active = Object.values(upload.conversionVariants ?? {}).find(
+      (v) => v.key === upload.normalizedKey,
+    );
+    return (
+      active?.settings ??
+      (upload.officeFamily
+        ? (defaultOfficeSettings(upload.officeFamily) as Record<string, unknown>)
+        : {})
+    );
   }
 
   return {
@@ -94,21 +155,17 @@ export function createUploadService(deps: UploadServiceDeps) {
       try {
         if (input.sizeBytes === 0) throw new HttpError(400, 'The file is empty', 'empty_file');
 
-        // Reject obviously unsupported files before they are stored.
+        // Reject unsupported files before they are stored.
         const detected = await conversion.detectType(await readHead(input.tempPath));
         if (detected.kind === 'unknown') {
           throw new HttpError(
             415,
-            'This file type is not supported. Upload a PDF, JPG or PNG.',
+            'This file type is not supported. Upload a PDF, Word, PowerPoint, Excel, JPG or PNG file.',
             'unsupported_type',
           );
         }
-        if (detected.kind === 'office') {
-          throw new HttpError(
-            415,
-            'Word, PowerPoint and Excel files are not supported yet. Please upload a PDF.',
-            'unsupported_type',
-          );
+        if (detected.kind === 'legacy_office') {
+          throw new HttpError(415, UNSUPPORTED_LEGACY_MESSAGE, 'unsupported_type');
         }
 
         // Keep within the platform storage limit.
@@ -125,6 +182,7 @@ export function createUploadService(deps: UploadServiceDeps) {
         const token = randomBytes(24).toString('base64url');
         const originalKey = `originals/${input.shopId}/${id}.${detected.ext}`;
         const contentSha256 = await sha256OfFile(input.tempPath);
+        const family = detected.kind === 'office' ? (detected.family ?? null) : null;
 
         await storage.putFile(originalKey, input.tempPath);
         const upload = await repo.create({
@@ -136,11 +194,16 @@ export function createUploadService(deps: UploadServiceDeps) {
           sizeBytes: input.sizeBytes,
           contentSha256,
           originalKey,
+          documentKind: detected.kind === 'office' ? 'office' : detected.kind,
+          officeFamily: family,
+          conversionSettings: family
+            ? (defaultOfficeSettings(family) as Record<string, unknown>)
+            : null,
           expiresAt: new Date(now().getTime() + deps.retentionHours * 3_600_000),
         });
 
         try {
-          await queue.enqueue(PROCESS_UPLOAD_JOB, { uploadId: id });
+          await queue.enqueue<ProcessUploadJob>(PROCESS_UPLOAD_JOB, { uploadId: id, revision: 0 });
         } catch (err) {
           await storage.delete(originalKey);
           await repo.delete(id);
@@ -153,36 +216,139 @@ export function createUploadService(deps: UploadServiceDeps) {
     },
 
     /** Job handler: validates and normalises an upload into a print-ready PDF. */
-    async process(uploadId: string): Promise<void> {
-      const upload = await repo.findById(uploadId);
-      if (!upload || upload.status !== 'processing' || !upload.originalKey) return;
+    async process(job: ProcessUploadJob): Promise<void> {
+      const upload = await repo.findById(job.uploadId);
+      if (
+        !upload ||
+        upload.status !== 'processing' ||
+        upload.conversionRevision !== job.revision ||
+        !upload.originalKey
+      ) {
+        return; // gone, already handled, or overtaken by newer settings
+      }
+
+      const family = upload.officeFamily;
+      const settings = family ? parseSettings(family, upload.conversionSettings) : undefined;
+      const variantId = settings ? settingsHash(settings) : 'default';
 
       try {
-        const original = await storage.get(upload.originalKey);
-        const detected = await conversion.detectType(original.subarray(0, HEAD_BYTES));
-        const { pdf, pageCount } = await conversion.normalize(original, detected);
+        const variants: ConversionVariants = upload.conversionVariants ?? {};
 
-        const normalizedKey = `normalized/${upload.shopId}/${upload.id}.pdf`;
+        // Same settings converted before: switch back instantly.
+        const cached = variants[variantId];
+        if (cached && (await storage.exists(cached.key))) {
+          await repo.markReady(upload.id, job.revision, {
+            normalizedKey: cached.key,
+            normalizedSizeBytes: cached.size,
+            pageCount: cached.pages,
+          });
+          return;
+        }
+
+        const original = await storage.get(upload.originalKey);
+        const detected = await conversion.detectType(original.subarray(0, SNIFF_BYTES));
+        const { pdf, pageCount } = await conversion.normalize(original, detected, settings);
+
+        const normalizedKey = settings
+          ? `normalized/${upload.shopId}/${upload.id}.${variantId}.pdf`
+          : `normalized/${upload.shopId}/${upload.id}.pdf`;
         await storage.put(normalizedKey, pdf);
-        await repo.markReady(upload.id, {
+
+        const nextVariants: ConversionVariants | undefined = settings
+          ? {
+              ...variants,
+              [variantId]: {
+                key: normalizedKey,
+                size: pdf.length,
+                pages: pageCount,
+                settings: settings as Record<string, unknown>,
+              },
+            }
+          : undefined;
+        const applied = await repo.markReady(upload.id, job.revision, {
           normalizedKey,
           normalizedSizeBytes: pdf.length,
           pageCount,
+          ...(nextVariants ? { conversionVariants: nextVariants } : {}),
         });
+        if (!applied) await storage.delete(normalizedKey); // overtaken while converting
       } catch (err) {
         const known = err instanceof ProcessingError;
-        if (!known) logger.error({ err, uploadId }, 'unexpected error processing upload');
-        else logger.info({ code: err.code, uploadId }, 'upload rejected');
+        if (!known)
+          logger.error({ err, uploadId: job.uploadId }, 'unexpected error processing upload');
+        else logger.info({ code: err.code, uploadId: job.uploadId }, 'upload processing failed');
 
-        await removeFiles({ originalKey: upload.originalKey, normalizedKey: null });
-        await repo.markFailed(upload.id, {
-          errorCode: known ? err.code : 'processing_failed',
-          errorMessage: known
-            ? err.message
-            : 'Something went wrong while preparing this file. Please try again.',
-          filesPurgedAt: now(),
-        });
+        const errorCode = known ? err.code : 'processing_failed';
+        const errorMessage = known
+          ? err.message
+          : 'Something went wrong while preparing this file. Please try again.';
+
+        if (upload.normalizedKey) {
+          // A settings change failed; the previous preview is still good.
+          await repo.revertToPrevious(upload.id, job.revision, {
+            errorCode,
+            errorMessage: `Those settings could not be applied: ${errorMessage}`,
+            conversionSettings: activeSettings(upload),
+          });
+        } else {
+          await removeFiles(upload);
+          await repo.markFailed(upload.id, job.revision, {
+            errorCode,
+            errorMessage,
+            filesPurgedAt: now(),
+          });
+        }
       }
+    },
+
+    /**
+     * Changes how an Office document is converted. Returns immediately if these settings were
+     * converted before; otherwise queues a conversion and the upload goes back to `processing`.
+     */
+    async changeConversion(token: string, rawSettings: unknown): Promise<UploadRecord> {
+      const upload = await this.getByToken(token);
+      if (upload.documentKind !== 'office' || !upload.officeFamily) {
+        throw new HttpError(400, 'This document has no conversion settings', 'not_convertible');
+      }
+      if (upload.status === 'processing') {
+        throw new HttpError(409, 'Still converting, wait for the preview first', 'busy');
+      }
+      if (upload.status !== 'ready' || !upload.originalKey) {
+        throw new HttpError(409, 'This upload can no longer be changed', 'not_ready');
+      }
+
+      const settings = parseSettings(upload.officeFamily, rawSettings);
+      const hash = settingsHash(settings);
+      const cached = upload.conversionVariants?.[hash];
+      if (cached && (await storage.exists(cached.key))) {
+        await repo.activateVariant(upload.id, {
+          normalizedKey: cached.key,
+          normalizedSizeBytes: cached.size,
+          pageCount: cached.pages,
+          conversionSettings: settings as Record<string, unknown>,
+        });
+      } else {
+        const started = await repo.beginReconversion(
+          upload.id,
+          upload.conversionRevision,
+          settings as Record<string, unknown>,
+        );
+        if (!started) throw new HttpError(409, 'The document changed, try again', 'conflict');
+        try {
+          await queue.enqueue<ProcessUploadJob>(PROCESS_UPLOAD_JOB, {
+            uploadId: upload.id,
+            revision: upload.conversionRevision + 1,
+          });
+        } catch (err) {
+          await repo.revertToPrevious(upload.id, upload.conversionRevision + 1, {
+            errorCode: 'processing_failed',
+            errorMessage: 'Could not start the conversion. Please try again.',
+            conversionSettings: activeSettings(upload),
+          });
+          throw err;
+        }
+      }
+      return this.getByToken(token);
     },
 
     /** Looks an upload up by its secret token. Expired or purged uploads count as missing. */

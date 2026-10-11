@@ -1,0 +1,64 @@
+# Production stack for Dokploy (or any Docker host): web (nginx) + api + postgres.
+#
+# Dokploy: create a "Compose" application from this repository, set the compose path to
+# infra/compose.prod.yaml, fill in the environment variables from infra/.env.production.example,
+# and attach your domain to the `web` service on port 80 (Dokploy's proxy provides HTTPS).
+# Do not publish PostgreSQL's port.
+
+name: print-platform
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-print}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-print}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-print}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-print}
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN, e.g. https://print.example.com}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (32+ random characters)}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      STORAGE_MAX_BYTES: ${STORAGE_MAX_BYTES:-5368709120}
+      RETENTION_HOURS: ${RETENTION_HOURS:-24}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+    volumes:
+      - files:/data
+    # Conversion is CPU/RAM heavy (LibreOffice); keep it from starving the database.
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  files:

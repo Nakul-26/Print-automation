@@ -5,6 +5,12 @@ import {
   FAKE_EXE,
   GS_COMMAND,
   gsAvailable,
+  LEGACY_OFFICE,
+  makeDocx,
+  makePptx,
+  makeXlsx,
+  OFFICE_COMMAND,
+  officeAvailable,
   makeEncryptedPdf,
   makePdf,
   makePng,
@@ -15,12 +21,16 @@ import {
 
 const conversion = createConversion({
   gs: { command: GS_COMMAND, timeoutMs: 60_000 },
+  office: { command: OFFICE_COMMAND, timeoutMs: 120_000 },
   maxPages: 10,
 });
 
 let gsOk = false;
+let officeOk = false;
 beforeAll(async () => {
   gsOk = await gsAvailable();
+  officeOk = await officeAvailable();
+  if (!officeOk) console.warn('LibreOffice unavailable; skipping Office conversion tests');
   if (!gsOk)
     console.warn(`Ghostscript unavailable (GS_COMMAND="${GS_COMMAND}"); skipping gs tests`);
 });
@@ -29,6 +39,12 @@ beforeAll(async () => {
 const gsIt = (name: string, fn: () => Promise<void>) =>
   it(name, async (ctx) => {
     if (!gsOk) ctx.skip();
+    await fn();
+  });
+
+const officeIt = (name: string, fn: () => Promise<void>) =>
+  it(name, async (ctx) => {
+    if (!officeOk) ctx.skip();
     await fn();
   });
 
@@ -88,13 +104,13 @@ describe('normalize', () => {
     ).rejects.toBeInstanceOf(ProcessingError);
   });
 
-  it('rejects unknown and (for now) Office files', async () => {
+  it('rejects unknown files and legacy Office files with a helpful message', async () => {
     await expect(
       conversion.normalize(FAKE_EXE, { kind: 'unknown', mime: 'x', ext: 'bin' }),
     ).rejects.toMatchObject({ code: 'unsupported_type' });
-    await expect(
-      conversion.normalize(Buffer.from('x'), { kind: 'office', mime: 'x', ext: 'docx' }),
-    ).rejects.toMatchObject({ code: 'unsupported_type' });
+    const legacy = await conversion.detectType(LEGACY_OFFICE);
+    expect(legacy.kind).toBe('legacy_office');
+    await expect(conversion.normalize(LEGACY_OFFICE, legacy)).rejects.toThrow(/.docx/);
   });
 });
 
@@ -192,5 +208,88 @@ describe('buildPrintPdf', () => {
     expect((await pdfInfo(out)).count).toBe(2);
     const [r, , b] = await renderMeans(out);
     expect(r).toBeCloseTo(b, 0);
+  });
+});
+
+describe('Office conversion', () => {
+  const writer = (over: Record<string, unknown> = {}) => ({
+    paperSize: 'A4',
+    orientation: 'auto',
+    margins: 'document',
+    ...over,
+  });
+
+  async function convert(file: Buffer, settings?: Record<string, unknown>) {
+    const detected = await conversion.detectType(file);
+    const result = await conversion.normalize(file, detected, settings as never);
+    return { detected, ...result, info: await pdfInfo(result.pdf) };
+  }
+
+  officeIt('detects the three Office families from their bytes', async () => {
+    expect((await conversion.detectType(await makeDocx(1))).family).toBe('writer');
+    expect((await conversion.detectType(await makeXlsx())).family).toBe('calc');
+    expect((await conversion.detectType(await makePptx())).family).toBe('impress');
+  });
+
+  officeIt('converts a Word document onto A4 by default', async () => {
+    const out = await convert(await makeDocx(), writer());
+    expect(out.pageCount).toBeGreaterThanOrEqual(2);
+    expect(new Set(out.info.sizes)).toEqual(new Set(['595x842']));
+  });
+
+  officeIt('re-flows a Word document onto A3, landscape, or without margins', async () => {
+    const docx = await makeDocx();
+    const a4 = await convert(docx, writer());
+    const a3 = await convert(docx, writer({ paperSize: 'A3' }));
+    expect(new Set(a3.info.sizes)).toEqual(new Set(['842x1191']));
+    expect(a3.pageCount).toBeLessThan(a4.pageCount);
+
+    const landscape = await convert(docx, writer({ orientation: 'landscape' }));
+    expect(new Set(landscape.info.sizes)).toEqual(new Set(['842x595']));
+
+    const noMargins = await convert(docx, writer({ margins: 'none' }));
+    expect(noMargins.pageCount).toBeLessThanOrEqual(a4.pageCount);
+  });
+
+  officeIt('scales a wide spreadsheet according to the fit option', async () => {
+    const xlsx = await makeXlsx();
+    const calc = (fit: string) => ({
+      paperSize: 'A4',
+      orientation: 'auto',
+      margins: 'document',
+      fit,
+      gridlines: false,
+    });
+    const actual = await convert(xlsx, calc('actual'));
+    const fitWidth = await convert(xlsx, calc('fit_width'));
+    const onePage = await convert(xlsx, calc('one_page_per_sheet'));
+    expect(actual.pageCount).toBeGreaterThan(fitWidth.pageCount);
+    expect(onePage.pageCount).toBe(1);
+  });
+
+  officeIt('exports slides, hidden slides, and notes pages as requested', async () => {
+    const pptx = await makePptx();
+    const base = { includeNotes: false, includeHiddenSlides: false };
+    const slides = await convert(pptx, base);
+    expect(slides.pageCount).toBe(2); // slide 2 is hidden
+    expect(slides.info.sizes[0]!.split('x').map(Number)[0]).toBeGreaterThan(
+      slides.info.sizes[0]!.split('x').map(Number)[1]!,
+    ); // slides are landscape
+
+    const withHidden = await convert(pptx, { ...base, includeHiddenSlides: true });
+    expect(withHidden.pageCount).toBe(3);
+
+    const notes = await convert(pptx, { ...base, includeNotes: true });
+    const [w, h] = notes.info.sizes[0]!.split('x').map(Number);
+    expect(h).toBeGreaterThan(w!); // notes pages are portrait
+  });
+
+  officeIt('rejects a damaged Office file cleanly', async () => {
+    const good = await makeDocx(5);
+    const damaged = good.subarray(0, Math.floor(good.length / 2));
+    const detected = { kind: 'office', family: 'writer', ext: 'docx', mime: 'x' } as const;
+    await expect(conversion.normalize(damaged, detected)).rejects.toMatchObject({
+      code: 'corrupt_file',
+    });
   });
 });

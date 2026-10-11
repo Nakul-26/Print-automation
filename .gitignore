@@ -13,3 +13,5 @@ apps/api/src/generated
 
 .scratch
 apps/api/data
+infra/*.log
+!.env.production.example

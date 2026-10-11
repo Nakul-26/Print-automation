@@ -6,7 +6,11 @@ import type { StorageDriver } from '../../platform/storage/index.js';
 import type { Conversion } from '../conversion/index.js';
 import { createUploadsRouter, uploadTempDir, type PublicShop } from './http/routes.js';
 import { createUploadRepo } from './repo/upload-repo.js';
-import { createUploadService, PROCESS_UPLOAD_JOB } from './service/upload-service.js';
+import {
+  createUploadService,
+  PROCESS_UPLOAD_JOB,
+  type ProcessUploadJob,
+} from './service/upload-service.js';
 
 export type { PublicShop };
 
@@ -32,11 +36,10 @@ export function createDocuments(deps: {
     maxStorageBytes: deps.env.STORAGE_MAX_BYTES,
   });
 
-  deps.queue.register<{ uploadId: string }>(
-    PROCESS_UPLOAD_JOB,
-    ({ uploadId }) => uploads.process(uploadId),
-    { concurrency: deps.env.WORKER_CONCURRENCY, timeoutSeconds: 180 },
-  );
+  deps.queue.register<ProcessUploadJob>(PROCESS_UPLOAD_JOB, (job) => uploads.process(job), {
+    concurrency: deps.env.WORKER_CONCURRENCY,
+    timeoutSeconds: 300,
+  });
 
   return {
     router: createUploadsRouter({
@@ -45,6 +48,7 @@ export function createDocuments(deps: {
       tempDir: uploadTempDir(deps.env.STORAGE_ROOT),
       maxUploadBytes: deps.env.MAX_UPLOAD_BYTES,
       rateLimitMax: deps.env.UPLOAD_RATE_LIMIT_MAX,
+      convertRateLimitMax: deps.env.CONVERT_RATE_LIMIT_MAX,
     }),
   };
 }

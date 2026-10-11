@@ -21,6 +21,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://print:print@localhost:5432/print
+      GS_COMMAND: gs
+      OFFICE_COMMAND: python3 ${{ github.workspace }}/infra/office/convert.py
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -28,8 +30,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - name: Install Ghostscript
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ghostscript
+      - name: Install Ghostscript and LibreOffice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ghostscript libreoffice-writer libreoffice-calc libreoffice-impress \
+            python3-uno fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @print/api prisma migrate deploy
       - run: pnpm format:check
@@ -38,3 +44,26 @@ jobs:
       - run: pnpm boundaries
       - run: pnpm test
       - run: pnpm build
+
+  # Make sure the production images keep building.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.api
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.web
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max

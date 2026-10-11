@@ -147,8 +147,16 @@ model Upload {
   originalKey         String?      @map("original_key")
   normalizedKey       String?      @map("normalized_key")
   normalizedSizeBytes Int?         @map("normalized_size_bytes")
-  /// How an Office document was converted (paper size, slides per page, ...). Phase 3.
+  /// pdf | image | office, decided from the file's bytes.
+  documentKind        String       @default("pdf") @map("document_kind")
+  /// writer | calc | impress for Office documents.
+  officeFamily        String?      @map("office_family")
+  /// How an Office document is converted (paper size, orientation, ...): the current settings.
   conversionSettings  Json?        @map("conversion_settings")
+  /// Bumped whenever the settings change so that stale conversion jobs can be ignored.
+  conversionRevision  Int          @default(0) @map("conversion_revision")
+  /// Every converted variant kept for this upload: { <settingsHash>: { key, size, pages, settings } }.
+  conversionVariants  Json?        @map("conversion_variants")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
   /// Files are deleted after this time (24 h from creation by default).
