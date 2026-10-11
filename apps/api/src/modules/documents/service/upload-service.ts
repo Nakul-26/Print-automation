@@ -32,6 +32,14 @@ export interface ProcessUploadJob {
 /** ZIP-based Office files list their parts near the start; the first entry can be large. */
 const SNIFF_BYTES = 512 * 1024;
 
+export interface UsableUpload {
+  id: string;
+  shopId: string;
+  originalName: string;
+  pageCount: number;
+  normalizedKey: string;
+}
+
 export interface UploadServiceDeps {
   repo: UploadRepo;
   storage: StorageDriver;
@@ -369,6 +377,41 @@ export function createUploadService(deps: UploadServiceDeps) {
         stream: storage.createReadStream(upload.normalizedKey),
         size: upload.normalizedSizeBytes ?? 0,
       };
+    },
+
+    /**
+     * For the ordering flow: the upload behind a token, provided it belongs to this shop and
+     * its converted PDF is ready to be printed.
+     */
+    async findUsableForShop(token: string, shopId: string): Promise<UsableUpload> {
+      const upload = await this.getByToken(token);
+      if (upload.shopId !== shopId) {
+        throw new HttpError(404, 'Upload not found', 'not_found');
+      }
+      if (upload.status !== 'ready' || !upload.normalizedKey || upload.pageCount === null) {
+        throw new HttpError(
+          409,
+          `"${upload.originalName}" is not ready yet. Wait for the preview to finish.`,
+          'upload_not_ready',
+        );
+      }
+      return {
+        id: upload.id,
+        shopId: upload.shopId,
+        originalName: upload.originalName,
+        pageCount: upload.pageCount,
+        normalizedKey: upload.normalizedKey,
+      };
+    },
+
+    /** The converted PDF of an upload (what the print job is built from). */
+    async readNormalized(normalizedKey: string): Promise<Buffer> {
+      return storage.get(normalizedKey);
+    },
+
+    /** Keeps the files of ordered uploads until the order's own expiry. */
+    extendExpiry(uploadIds: string[], expiresAt: Date): Promise<void> {
+      return repo.setExpiry(uploadIds, expiresAt);
     },
 
     /** The student discards an upload; its files are deleted immediately. */

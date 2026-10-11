@@ -23,6 +23,7 @@ export function createShops(deps: { db: Db; audit: Audit; requireAuth: RequestHa
     requireShopAccess: shopAccess,
     /** Public lookup used by student-facing routes (no membership required). */
     findBySlug: repo.findBySlug,
+    findById: repo.findById,
     createShop: service.createShop,
     addMember: service.addMember,
   };

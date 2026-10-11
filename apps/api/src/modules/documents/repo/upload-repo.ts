@@ -184,6 +184,11 @@ export function createUploadRepo(db: Db) {
       });
     },
 
+    /** Moves the expiry of the given uploads (used when they become part of an order). */
+    async setExpiry(ids: string[], expiresAt: Date): Promise<void> {
+      await db.upload.updateMany({ where: { id: { in: ids } }, data: { expiresAt } });
+    },
+
     async delete(id: string): Promise<void> {
       await db.upload.deleteMany({ where: { id } });
     },

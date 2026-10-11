@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { loadApiEnv } from '@print/config';
 import { createContainer } from './composition.js';
+import { DEFAULT_RATES } from './modules/pricing/index.js';
 import { createDb } from './platform/db/client.js';
 import { createLogger } from './platform/observability/logger.js';
 
@@ -9,8 +10,9 @@ const USAGE = `Usage:
   pnpm --filter @print/api cli create-admin --email <email> --name <name> [--password <pw>]
   pnpm --filter @print/api cli create-shop --name <shop name> --slug <slug>
         --owner-email <email> --owner-name <name> [--owner-password <pw>] [--pending]
+        [--no-default-rates]
 
-Passwords are generated and printed once if not supplied. Shops are created active unless --pending.`;
+Passwords are generated and printed once if not supplied. Shops are created active unless --pending, with a starter rate card unless --no-default-rates.`;
 
 const generatePassword = (): string => randomBytes(12).toString('base64url');
 
@@ -27,6 +29,7 @@ async function main(): Promise<void> {
       'owner-name': { type: 'string' },
       'owner-password': { type: 'string' },
       pending: { type: 'boolean' },
+      'no-default-rates': { type: 'boolean' },
     },
   });
 
@@ -67,6 +70,7 @@ async function main(): Promise<void> {
         status: values.pending ? 'pending_approval' : 'active',
       });
       await container.shops.addMember({ shopId: shop.id, userId: owner.id, role: 'owner' });
+      if (!values['no-default-rates']) await container.pricing.setRates(shop.id, DEFAULT_RATES);
 
       console.log(`Created shop "${shop.name}" (/${shop.slug}), id ${shop.id}`);
       console.log(`Owner: ${owner.email}${generated ? ` (new account)` : ' (existing account)'}`);

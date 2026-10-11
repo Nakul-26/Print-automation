@@ -3,8 +3,11 @@ import { createAudit } from './modules/audit/index.js';
 import { createConversion } from './modules/conversion/index.js';
 import { createDocuments } from './modules/documents/index.js';
 import { createIdentity, requireAuth } from './modules/identity/index.js';
+import { createOrders } from './modules/orders/index.js';
+import { createPricing } from './modules/pricing/index.js';
 import { createShops } from './modules/shops/index.js';
 import type { Db } from './platform/db/client.js';
+import { createBotCheck } from './platform/http/turnstile.js';
 import type { Logger } from './platform/observability/logger.js';
 import { PgBossQueue } from './platform/queue/index.js';
 import { LocalDiskStorage } from './platform/storage/index.js';
@@ -37,11 +40,37 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     findShopBySlug: shops.findBySlug,
   });
 
+  const pricing = createPricing({
+    db,
+    audit,
+    requireAuth,
+    requireShopAccess: shops.requireShopAccess,
+  });
+  const orders = createOrders({
+    db,
+    env,
+    logger,
+    storage,
+    queue,
+    conversion,
+    audit,
+    botCheck: createBotCheck({
+      secretKey: env.TURNSTILE_SECRET_KEY,
+      siteKey: env.TURNSTILE_SITE_KEY,
+    }),
+    findShopBySlug: shops.findBySlug,
+    findShopById: shops.findById,
+    getRateTable: pricing.getRateTable,
+    uploads: documents.api,
+  });
+
   return {
     audit,
     identity,
     shops,
     documents,
+    pricing,
+    orders,
     conversion,
     storage,
     /** Starts background job processing. Call once at boot (and in tests that need jobs). */

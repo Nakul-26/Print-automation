@@ -74,6 +74,10 @@ export function createConversion(options: ConversionOptions) {
       return { pdf, pageCount: info.pageCount };
     },
 
+    async countPages(pdf: Buffer): Promise<number> {
+      return (await inspectPdf(pdf, Number.MAX_SAFE_INTEGER)).pageCount;
+    },
+
     buildPrintPdf: (request: PrintPdfRequest): Promise<Buffer> =>
       buildPrintPdf(gs, maxPages, request),
 

@@ -37,6 +37,15 @@ export const ApiEnvSchema = z.object({
   /** Max uploads per IP per 15 minutes. */
   UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  /** Cloudflare Turnstile keys. Leave unset to disable bot checks (development). */
+  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  TURNSTILE_SITE_KEY: z.string().min(1).optional(),
+  /** Max orders per IP per 15 minutes. */
+  ORDER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  /** Max price estimates per IP per 15 minutes. */
+  ESTIMATE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(240),
+  /** Most copies of one document in an order. */
+  MAX_COPIES: z.coerce.number().int().positive().max(500).default(200),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(168),
   /** Max login attempts per IP per 15 minutes. */
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),

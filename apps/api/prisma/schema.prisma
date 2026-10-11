@@ -90,6 +90,9 @@ model Shop {
 
   members ShopMember[]
   uploads Upload[]
+  rates   ShopRate[]
+  pricing ShopPricing?
+  orders  Order[]
 
   @@map("shops")
 }
@@ -163,9 +166,125 @@ model Upload {
   expiresAt           DateTime     @map("expires_at")
   filesPurgedAt       DateTime?    @map("files_purged_at")
 
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop      Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  orderItem OrderItem?
 
   @@index([shopId, createdAt])
   @@index([expiresAt])
   @@map("uploads")
+}
+
+/// One price: what a shop charges per printed side for a paper size / colour / sides combination.
+model ShopRate {
+  id                String   @id @default(uuid()) @db.Uuid
+  shopId            String   @map("shop_id") @db.Uuid
+  paperSize         String   @map("paper_size")
+  colorMode         String   @map("color_mode")
+  sides             String
+  /// Integer paise (1/100 rupee) so money is never fractional.
+  pricePerSidePaise Int      @map("price_per_side_paise")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, paperSize, colorMode, sides])
+  @@map("shop_rates")
+}
+
+model ShopPricing {
+  shopId             String   @id @map("shop_id") @db.Uuid
+  minimumChargePaise Int      @default(0) @map("minimum_charge_paise")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@map("shop_pricing")
+}
+
+enum OrderStatus {
+  processing
+  pending
+  accepted
+  printing
+  completed
+  rejected
+  failed
+  expired
+}
+
+model Order {
+  id                   String      @id @default(uuid()) @db.Uuid
+  shopId               String      @map("shop_id") @db.Uuid
+  /// Queue date in the shop's timezone (YYYY-MM-DD) and the number within that day: "P014".
+  queueDate            String      @map("queue_date")
+  queueNumber          Int         @map("queue_number")
+  /// Unguessable handle the student uses to follow the order; only its HMAC is stored.
+  lookupTokenHash      String      @unique @map("lookup_token_hash")
+  customerName         String?     @map("customer_name")
+  status               OrderStatus @default(processing)
+  estimatedAmountPaise Int         @map("estimated_amount_paise")
+  finalAmountPaise     Int?        @map("final_amount_paise")
+  currency             String      @default("INR")
+  /// The rates and minimum charge in force when the order was placed.
+  rateSnapshot         Json        @map("rate_snapshot")
+  rejectionReason      String?     @map("rejection_reason")
+  failureReason        String?     @map("failure_reason")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+  completedAt          DateTime?   @map("completed_at")
+  /// Files are deleted after this time (24 h from order creation).
+  expiresAt            DateTime    @map("expires_at")
+  filesPurgedAt        DateTime?   @map("files_purged_at")
+
+  shop  Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  items OrderItem[]
+
+  @@unique([shopId, queueDate, queueNumber])
+  @@index([shopId, status, createdAt])
+  @@index([expiresAt])
+  @@map("orders")
+}
+
+/// One document in an order, with its own print settings.
+model OrderItem {
+  id                String  @id @default(uuid()) @db.Uuid
+  orderId           String  @map("order_id") @db.Uuid
+  /// Denormalised so every query on this table can be scoped by shop.
+  shopId            String  @map("shop_id") @db.Uuid
+  /// An upload can belong to at most one order item.
+  uploadId          String  @unique @map("upload_id") @db.Uuid
+  position          Int
+  originalName      String  @map("original_name")
+  pageCount         Int     @map("page_count")
+  printSettings     Json    @map("print_settings")
+  /// 1-based pages chosen from the document, in print order.
+  selectedPages     Json    @map("selected_pages")
+  selectedPageCount Int     @map("selected_page_count")
+  printedSides      Int     @map("printed_sides")
+  sheets            Int
+  amountPaise       Int     @map("amount_paise")
+  /// The converted PDF this item was ordered from (snapshot of the chosen conversion variant).
+  sourceKey         String  @map("source_key")
+  /// The exact PDF to print (page range, N-up, grayscale applied). Filled by the prepare job.
+  printPdfKey       String? @map("print_pdf_key")
+  printPdfBytes     Int?    @map("print_pdf_bytes")
+  printPdfPages     Int?    @map("print_pdf_pages")
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([shopId])
+  @@map("order_items")
+}
+
+/// Per shop per day counter that hands out queue numbers atomically.
+model OrderCounter {
+  shopId     String @map("shop_id") @db.Uuid
+  dateKey    String @map("date_key")
+  lastNumber Int    @default(0) @map("last_number")
+
+  @@id([shopId, dateKey])
+  @@map("order_counters")
 }

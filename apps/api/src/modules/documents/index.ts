@@ -13,6 +13,7 @@ import {
 } from './service/upload-service.js';
 
 export type { PublicShop };
+export type { UsableUpload } from './service/upload-service.js';
 
 /** Public API of the documents module: student uploads and their processing. */
 export function createDocuments(deps: {
@@ -42,6 +43,12 @@ export function createDocuments(deps: {
   });
 
   return {
+    /** The part of this module other modules may use. */
+    api: {
+      findUsableForShop: uploads.findUsableForShop.bind(uploads),
+      readNormalized: uploads.readNormalized.bind(uploads),
+      extendExpiry: uploads.extendExpiry.bind(uploads),
+    },
     router: createUploadsRouter({
       uploads,
       findShopBySlug: deps.findShopBySlug,

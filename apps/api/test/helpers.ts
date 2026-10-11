@@ -11,6 +11,16 @@ import { TEST_DATABASE_URL } from './test-env.js';
 
 export const PASSWORD = 'correct-horse-battery';
 
+/** Simple round prices so expected amounts are easy to check by hand. */
+export const TEST_RATES = {
+  minimumChargePaise: 200,
+  rates: [
+    { paperSize: 'A4', colorMode: 'black_white', sides: 'single', pricePerSidePaise: 200 },
+    { paperSize: 'A4', colorMode: 'black_white', sides: 'double', pricePerSidePaise: 150 },
+    { paperSize: 'A4', colorMode: 'color', sides: 'single', pricePerSidePaise: 1000 },
+  ],
+} as const;
+
 export interface TestContext {
   app: Express;
   db: Db;
@@ -28,6 +38,8 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
     DATABASE_URL: TEST_DATABASE_URL,
     SESSION_SECRET: 'test-secret-test-secret-test-secret-123',
     LOGIN_RATE_LIMIT_MAX: '1000',
+    ORDER_RATE_LIMIT_MAX: '1000',
+    ESTIMATE_RATE_LIMIT_MAX: '1000',
     UPLOAD_RATE_LIMIT_MAX: '1000',
     STORAGE_ROOT: storageRoot,
     GS_COMMAND: process.env['GS_COMMAND'] ?? 'gs',
@@ -53,7 +65,7 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
 
 export async function resetDatabase(db: Db): Promise<void> {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE audit_log, uploads, sessions, shop_members, shops, users RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE audit_log, order_items, orders, order_counters, uploads, shop_rates, shop_pricing, sessions, shop_members, shops, users RESTART IDENTITY CASCADE',
   );
 }
 
@@ -83,5 +95,6 @@ export async function seedShop(
     status: opts.status ?? 'active',
   });
   await ctx.container.shops.addMember({ shopId: shop.id, userId: owner.id, role: 'owner' });
+  await ctx.container.pricing.setRates(shop.id, structuredClone(TEST_RATES) as never);
   return { shopId: shop.id, slug, ownerId: owner.id, ownerEmail: email };
 }

@@ -48,7 +48,9 @@ export function createApp({ env, logger, readinessChecks, container }: AppDeps):
   v1.use(container.identity.authenticate);
   v1.use('/auth', container.identity.router);
   v1.use('/owner/shops', container.shops.ownerRouter);
+  v1.use('/owner/shops', container.pricing.ownerRouter);
   v1.use(container.documents.router);
+  v1.use(container.orders.router);
   app.use('/api/v1', v1);
 
   app.use(notFoundHandler);

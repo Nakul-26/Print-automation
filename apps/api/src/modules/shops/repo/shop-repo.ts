@@ -35,6 +35,10 @@ export function createShopRepo(db: Db) {
       return db.shop.create({ data, select: shopSelect });
     },
 
+    findById(id: string): Promise<ShopRecord | null> {
+      return db.shop.findUnique({ where: { id }, select: shopSelect });
+    },
+
     findBySlug(slug: string): Promise<ShopRecord | null> {
       return db.shop.findUnique({ where: { slug }, select: shopSelect });
     },
