@@ -319,7 +319,7 @@ Exit: bad/corrupt/huge/encrypted files are rejected safely; B&W output verified 
 LibreOffice worker image with fonts, sandbox and limits, conversion settings per type, re-conversion with caching, font-substitution warnings, preview UI with "confirm" step.
 Exit: DOCX/PPTX/XLSX samples convert with adjustable settings; page count reflects the confirmed preview.
 
-**Phase 4: Pricing and ordering (2 weeks)**
+**Phase 4: Pricing and ordering (2 weeks) — DONE**
 Rates and printer presets, estimate engine (unit-tested), atomic daily order numbers, student wizard, confirmation and status page, Turnstile and rate limits.
 Exit: mobile student places an order; estimate matches hand calculations; concurrent submissions never duplicate numbers.
 

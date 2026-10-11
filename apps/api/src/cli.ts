@@ -8,6 +8,7 @@ import { createLogger } from './platform/observability/logger.js';
 
 const USAGE = `Usage:
   pnpm --filter @print/api cli create-admin --email <email> --name <name> [--password <pw>]
+  pnpm --filter @print/api cli set-default-rates --slug <slug>
   pnpm --filter @print/api cli create-shop --name <shop name> --slug <slug>
         --owner-email <email> --owner-name <name> [--owner-password <pw>] [--pending]
         [--no-default-rates]
@@ -49,6 +50,12 @@ async function main(): Promise<void> {
       });
       console.log(`Created platform admin ${user.email}`);
       if (!values.password) console.log(`Password (shown once): ${password}`);
+    } else if (command === 'set-default-rates') {
+      if (!values.slug) throw new Error(USAGE);
+      const shop = await container.shops.findBySlug(values.slug);
+      if (!shop) throw new Error(`No shop with slug "${values.slug}"`);
+      await container.pricing.setRates(shop.id, DEFAULT_RATES);
+      console.log(`Applied the starter rate card to "${shop.name}"`);
     } else if (command === 'create-shop') {
       const ownerEmail = values['owner-email'];
       const ownerName = values['owner-name'];

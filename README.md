@@ -62,3 +62,5 @@ docker compose --env-file infra/.env.local -f infra/compose.prod.yaml -f infra/c
 ```
 
 Deploying with Dokploy: create a Compose application from this repository, set the compose path to `infra/compose.prod.yaml`, enter the variables from `infra/.env.production.example` in the Environment tab, and attach your domain to the `web` service on port 80. See `docs/adr/0005-office-conversion-and-containers.md`.
+
+Note: if port 4000 is taken, run the API with `PORT=4100` and the web app with `API_PROXY_TARGET=http://localhost:4100 pnpm --filter @print/web dev`. Open a shop at `http://localhost:5173/s/<slug>`.

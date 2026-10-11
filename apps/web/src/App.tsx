@@ -1,22 +1,26 @@
-import { useEffect, useState } from 'react';
-import { HealthResponse } from '@print/contracts';
-
-type ApiState = 'checking' | 'online' | 'offline';
+import { Link, Route, Routes } from 'react-router';
+import { HomePage } from './pages/HomePage';
+import { OrderPage } from './pages/OrderPage';
+import { ShopPage } from './pages/ShopPage';
 
 export function App() {
-  const [api, setApi] = useState<ApiState>('checking');
-
-  useEffect(() => {
-    fetch('/health')
-      .then((r) => r.json())
-      .then((body) => setApi(HealthResponse.safeParse(body).success ? 'online' : 'offline'))
-      .catch(() => setApi('offline'));
-  }, []);
-
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-3 p-6">
-      <h1 className="text-2xl font-semibold">Print Platform</h1>
-      <p className="text-slate-600">Foundation build. API status: {api}</p>
-    </main>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/s/:slug" element={<ShopPage />} />
+      <Route path="/s/:slug/order/:token" element={<OrderPage />} />
+      <Route
+        path="*"
+        element={
+          <main className="mx-auto w-full max-w-md px-4 py-16">
+            <h1 className="display text-3xl">Page not found</h1>
+            <p className="mt-3 text-muted">That link does not lead anywhere.</p>
+            <Link to="/" className="mt-4 inline-block font-medium text-cyan underline">
+              Back to start
+            </Link>
+          </main>
+        }
+      />
+    </Routes>
   );
 }

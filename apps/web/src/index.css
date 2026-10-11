@@ -1,1 +1,126 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+/*
+ * Design tokens. The look borrows from the print shop itself: cool copy-paper white,
+ * toner black, one cyan "ink" for actions, magenta for problems, and the yellow token slip
+ * the shop hands out (used only for the queue ticket).
+ */
+@theme {
+  --color-paper: #f2f5f7;
+  --color-card: #ffffff;
+  --color-ink: #11151a;
+  --color-muted: #55616c;
+  --color-line: #d3dae0;
+  --color-cyan: #0a6e8a;
+  --color-cyan-deep: #07566d;
+  --color-cyan-wash: #e3f1f5;
+  --color-magenta: #b5164f;
+  --color-magenta-wash: #fbe9f0;
+  --color-slip: #ffd23f;
+  --color-slip-deep: #e9b800;
+  --color-ok: #1b6b3a;
+  --color-ok-wash: #e4f3ea;
+
+  --font-display: 'Archivo Variable', 'Archivo', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-card: 14px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-paper);
+}
+
+/* Wide, heavy headings are the typographic voice; everything else stays plain. */
+.display {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* The token slip: perforated left and right edges cut out of a flat colour. */
+.slip {
+  --notch: 11px;
+  background: var(--color-slip);
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+}
+
+.perforation {
+  background-image: linear-gradient(to right, var(--color-ink) 50%, transparent 0);
+  background-size: 10px 2px;
+  background-repeat: repeat-x;
+  height: 2px;
+  opacity: 0.45;
+}
+
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(-4deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.97) rotate(-1deg);
+  }
+  100% {
+    transform: scale(1) rotate(-1deg);
+  }
+}
+.stamp {
+  animation: stamp 420ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
