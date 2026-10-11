@@ -14,7 +14,7 @@ export default tseslint.config(
   {
     // process.env may only be read through @print/config.
     files: ['apps/**/*.ts', 'apps/**/*.tsx'],
-    ignores: ['**/*.test.ts', '**/*.config.ts'],
+    ignores: ['**/*.test.ts', '**/*.config.ts', '**/test/**'],
     rules: {
       'no-restricted-properties': [
         'error',

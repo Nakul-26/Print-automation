@@ -25,6 +25,9 @@ export const ApiEnvSchema = z.object({
     .int()
     .positive()
     .default(20 * 1024 * 1024),
+  SESSION_TTL_HOURS: z.coerce.number().positive().default(168),
+  /** Max login attempts per IP per 15 minutes. */
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   TRUST_PROXY: bool,
 });
 export type ApiEnv = z.infer<typeof ApiEnvSchema>;

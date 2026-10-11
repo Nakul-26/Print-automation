@@ -21,3 +21,104 @@ model PlatformSetting {
 
   @@map("platform_settings")
 }
+
+enum PlatformRole {
+  user
+  platform_admin
+}
+
+enum ShopStatus {
+  pending_approval
+  active
+  suspended
+}
+
+enum ShopRole {
+  owner
+  staff
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique
+  name         String
+  passwordHash String       @map("password_hash")
+  platformRole PlatformRole @default(user) @map("platform_role")
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  sessions    Session[]
+  memberships ShopMember[]
+
+  @@map("users")
+}
+
+/// Server-side login sessions. Only an HMAC of the cookie token is stored.
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  userAgent  String?  @map("user_agent")
+  ip         String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Shop {
+  id                String     @id @default(uuid()) @db.Uuid
+  slug              String     @unique
+  name              String
+  status            ShopStatus @default(pending_approval)
+  address           String?
+  contactPhone      String?    @map("contact_phone")
+  timezone          String     @default("Asia/Kolkata")
+  currency          String     @default("INR")
+  /// Per-shop settings and feature flags (retention hours, enabled formats, ...).
+  settings          Json       @default("{}")
+  /// Null means "use the platform default".
+  storageQuotaBytes BigInt?    @map("storage_quota_bytes")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  members ShopMember[]
+
+  @@map("shops")
+}
+
+model ShopMember {
+  shopId    String   @map("shop_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      ShopRole
+  createdAt DateTime @default(now()) @map("created_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([shopId, userId])
+  @@index([userId])
+  @@map("shop_members")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorType String   @map("actor_type")
+  actorId   String?  @map("actor_id")
+  shopId    String?  @map("shop_id") @db.Uuid
+  action    String
+  entity    String?
+  entityId  String?  @map("entity_id")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([shopId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_log")
+}

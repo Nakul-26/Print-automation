@@ -16,6 +16,16 @@ pnpm --filter @print/api prisma migrate dev
 pnpm dev                                 # API on :4000, web on :5173
 ```
 
+## Creating a platform admin and a shop (until the admin panel exists)
+
+```bash
+pnpm --filter @print/api cli create-admin --email you@example.com --name "Your Name"
+pnpm --filter @print/api cli create-shop --name "Demo Prints" --slug demo-prints \
+  --owner-email owner@example.com --owner-name "Shop Owner"
+```
+
+Passwords are generated and printed once. Run tests with `pnpm test` (needs `pnpm db:up`; integration tests use a separate `print_test` database).
+
 ## Useful commands
 
 | Command           | What it does                                              |
