@@ -1,0 +1,19 @@
+import { describe, expect, it } from 'vitest';
+import { loadApiEnv } from './env.js';
+
+const valid = {
+  DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+  SESSION_SECRET: 'x'.repeat(32),
+};
+
+describe('loadApiEnv', () => {
+  it('applies defaults, including the 5 GB storage limit', () => {
+    const env = loadApiEnv(valid);
+    expect(env.PORT).toBe(4000);
+    expect(env.STORAGE_MAX_BYTES).toBe(5 * 1024 ** 3);
+    expect(env.RETENTION_HOURS).toBe(24);
+  });
+  it('fails with a readable message on bad config', () => {
+    expect(() => loadApiEnv({ ...valid, SESSION_SECRET: 'short' })).toThrow(/SESSION_SECRET/);
+  });
+});

@@ -1,0 +1,35 @@
+{
+  "name": "print-platform",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "boundaries": "depcruise apps packages --config .dependency-cruiser.cjs",
+    "db:up": "docker compose -f infra/compose.dev.yaml up -d --wait",
+    "db:down": "docker compose -f infra/compose.dev.yaml down",
+    "db:migrate": "pnpm --filter @print/api prisma migrate dev",
+    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "dependency-cruiser": "^18.5.0",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
+    "turbo": "^2.11.7",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3"
+  }
+}

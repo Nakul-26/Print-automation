@@ -1,0 +1,988 @@
+Bro help me develop a simple print helping application - we have our own server, and dokoploy is installed on that, the application should help print shops, what normally happens is like when someone wants to get something printed, they send the docs through whatsapp or email, and the shop owner has to like select no of pages, color or balck and white etc etc, the print shops near schools and colleges lose a lot of time and money because of this, so what application we need is the customers install a web app, or opens a website - where they upload the docs, and set all the things like how many pages to print, etc, and then upload it, and they get a number(they can also set a name optionally), now the shop owner opens a web app or website - it will should like a list of orders - all the owner has to do is print or reject it, like the wner will call the number(or name) and is the student is present and pays - the owner will print it
+
+##################################################################################################
+
+Bro, this is actually a solid idea, especially for print shops near schools and colleges. 🔥 The main problem isn't printing itself — it's the time wasted receiving documents on WhatsApp, clarifying print settings, checking files, and organizing students' requests.
+
+Let's build this as a simple print-order management platform that you can host on your own server through Dokploy. We should start with one shop, make it reliable, and then expand it to multiple shops.
+
+# 1. How the application will work
+
+[Viernes 2 de agosto, último día para subir documentos para calendario 2024-B | Universidad de Guadalajara](https://images.openai.com/static-rsc-4/UEhH06U_2YIdcbmBiVrYK1je6wmyJd0XxnpkS-BZrC-J_QqLrhoxuJ9dgn4PSXgM5tCdSbyppAfhQZGexMvO3Iq6Yhw5HBYNyd7erV07pzRm6jSDvJ1clQAj4WJT8xzmhfO1ItGWl2rjY6RMNT1_2IENVzdO1F_4ffbn2R9KX8E?purpose=inline)
+
+1\. Student places an order
+
+The student opens the website, uploads their document, selects print settings, and submits the order. No account installation or registration required.
+
+They receive a queue number, such as P104, and can optionally enter their name.
+
+[DU photocopy case: Oxford, Cambridge to withdraw lawsuit against Rameshwari](https://images.openai.com/static-rsc-4/_pbPPQ3Q19jCymcz_mZW4iBP3rb6DSCVNJBevnV9ONxTCkaYQ-b-TUZUD-AfF_WyTtPK_E92QAmjtkdo6YlllK7KdV4hDzUeJ3nKY1UvPBSme9ltkXcHfWcrDhD1ycjfta7s3vRvZxzCBCdEQZLNP0-lqIDRFv-wSW-gqe-_eJY?purpose=inline)
+
+2\. Shop owner sees the order queue
+
+The owner opens a private dashboard and sees incoming orders in real time, including the order number, document, number of copies, color mode, and page range.
+
+They can open the document, accept the job, or reject it.
+
+[Impressão A4 - P/B - Frente e Verso | Gráfica Live Printer em Niterói](https://images.openai.com/static-rsc-4/tczX11yX5fYZDjrNHkLYQ_X1uFnDHrY3ToLedIIZONh2Pu_Bc1oySuLswXDM1ICEKV6l3yttDrsr9qMyJvMmFVyA52KTN8Z4Fq8vL0fPj1ZYIh1SFoAaXvg4z92AF529clyD5VVkyLGMc217_eyL0pepSdcDd9AJcSSsru7dgc0?purpose=inline)
+
+3\. Student arrives and collects
+
+The owner calls the order number or student's optional name. Once the student is present and pays, the owner prints the document and marks the order as completed.
+
+No online payments, printer integration, or complicated delivery workflow needed for the first version.
+
+## 2. The two interfaces
+
+## Student website
+
+Public
+
+[Printt - Collect at Ryman | Collect A4 printing at Ryman Near You](https://images.openai.com/static-rsc-4/89-6SaPpFzhIShUtVtafkOxJWTMTTuDrmxZmSmE0KA_yMLzauTDfn4kiW6Q0lXAYiCQeRN2D0UpL8RHOPaDqMOyIL1r1daJww1QmFFjkJmCMiVpC49rg6mdfyxQG2KZ4unHNOJQh5ywcyCADXQS_ebyGnh7_GXoASUWEKNLynZ8?purpose=inline)
+
+[printtapp1.squarespace.com](https://printtapp1.squarespace.com/collect-at-ryman)
+
+- Upload a PDF.
+- Choose all pages or a custom page range.
+- Select black and white or color.
+- Choose single-sided or double-sided printing.
+- Choose paper size, copies, and page layout.
+- Optionally enter a name.
+- Submit and receive a queue number.
+
+## Shop-owner dashboard
+
+Private
+
+[PrintAdmin - Print Production Management System](https://images.openai.com/static-rsc-4/m4fiHdkH3GYSKwhxpI5IfqRJd5uC7MYzSKy4r-gHXcxiuji4KwzpAtQbhgmmBoROyHi-ryNTNtCLDWMOVmMmRd27US93VW7Kh2taS_FGhGigSC0iUePwCORSzA1k3_s6-bpFm8brxZmlZSlzdDObLZqD1UvONh0EQsphSy1IwKk?purpose=inline)
+
+[printadmin.app](https://www.printadmin.app/)
+
+- View pending, accepted, and completed orders.
+- Preview and download documents.
+- See print settings without asking the customer.
+- Accept or reject orders.
+- Mark orders as completed after payment and printing.
+- Filter or search by order number.
+
+These images are design references, not the actual application yet.
+
+# 3. Tech stack I'd use
+
+Let's keep this close to your existing development experience so you can build and maintain it quickly.
+
+| Component               | Technology                                 |
+| ----------------------- | ------------------------------------------ |
+| Frontend                | React + Vite + TypeScript                  |
+| Styling                 | Tailwind CSS                               |
+| Backend API             | Node.js + Express + TypeScript             |
+| Database                | MongoDB                                    |
+| Document storage        | Cloudflare R2 or persistent server storage |
+| Live order updates      | Socket.IO                                  |
+| Deployment              | Docker + Dokploy                           |
+| Reverse proxy and HTTPS | Dokploy's configured proxy                 |
+
+Architecture: start with one backend, one database, and two interfaces. Don't introduce microservices, RabbitMQ, or Redis until there is a demonstrated need.
+
+Student web app
+
+Upload PDF · Set print options
+
+Express API
+
+Validation · Order numbers · Access control
+
+MongoDB
+
+Order queue
+
+File storage
+
+Uploaded PDFs
+
+Shop dashboard
+
+Live queue · Download · Accept · Reject · Complete
+
+## 4. Order workflow and database
+
+Each order should have a lifecycle like this:
+
+Pending
+
+Accepted
+
+Shop accepts job
+
+Rejected
+
+Shop declines job
+
+Completed
+
+Only accepted orders can be completed. Rejected orders remain in the history.
+
+A MongoDB order document could look like this:
+
+```
+{
+  "orderNumber": "P104",
+  "customerName": "Rahul",
+  "status": "pending",
+  "fileKey": "orders/abc123/document.pdf",
+  "originalFilename": "assignment.pdf",
+  "printSettings": {
+    "pageSelection": "custom",
+    "pages": "1-5,8",
+    "colorMode": "black_white",
+    "sides": "double",
+    "paperSize": "A4",
+    "copies": 2,
+    "pagesPerSheet": 1
+  },
+  "createdAt": "2026-10-11T10:30:00Z"
+}
+```
+
+The order number should be unique within the shop and easy to call out. We can use a daily sequence or a short unique code.
+
+One important detail: page range, copies, and pages per sheet are different settings. We should make these explicit to avoid incorrect printing.
+
+## 5. MVP features versus later features
+
+Phase 1 — Essential MVP
+
+PDF uploads, print settings, order numbers, live shop queue, document download, accept/reject, completion, and a password-protected shop dashboard.
+
+Phase 1 — Essential safeguards
+
+Validate file type and size, protect document download routes, restrict dashboard access, and automatically delete old documents. Uploaded files should not be publicly accessible.
+
+Phase 2 — After testing with a real shop
+
+Multiple shops, shop-specific links or QR codes, estimated pricing, order status lookup, and optional notifications.
+
+I'd initially accept PDFs only. Word documents, PowerPoint files, and images can introduce formatting problems and inconsistent page counts. We can add them after the PDF workflow works reliably.
+
+## 6. A few decisions before we build
+
+Bro, I recommend we settle these first because they affect the data model and deployment.
+
+1\. How should shops join?
+
+One shop initially, with the architecture ready to expand
+
+Multiple shops can register and get their own order queue
+
+2\. Where should uploaded documents be stored?
+
+Cloudflare R2 — object storage, separate from the application server
+
+On our own server, using a persistent Docker volume
+
+3\. How should print prices work?
+
+No price calculation; customer pays at the shop
+
+Show an estimated price using each shop's rates
+
+4\. How should customers identify their orders?
+
+Queue number only, with an optional name
+
+Queue number and phone number
+
+5\. Which file formats should we support initially?
+
+PDF only — simplest and most predictable
+
+PDF, Word, PowerPoint, and images
+
+Let's build this version
+
+My starting recommendation is to keep the student experience frictionless: scan a shop's QR code, upload a PDF, select settings, receive a number, and collect the printout. The shop owner should be able to manage the queue without needing to learn a complicated system.
+
+
+
+###############################################################################################
+
+Let's build the print-shop application. Decisions: shop model = multi; document storage = server; pricing = estimate; customer identification = queue; file formats = all. Please provide the concrete project structure, MongoDB schema, API routes, React pages, and Dokploy deployment plan for the MVP.
+
+##################################################################################################
+
+
+Bro, let's build this as a proper multi-tenant product, not just a file-upload form. The important part is that every print shop gets its own queue, prices, files, and owner dashboard, while students can place orders without creating accounts.
+
+We'll use your existing MERN experience and Dokploy server setup, with local persistent file storage as you selected. The initial version will be a modular monolith: one API, one frontend, and one MongoDB instance, without unnecessary microservices.
+
+# 1. Final architecture
+
+Student web app
+
+Shop QR code · Upload · Print settings · Price estimate · Order number
+
+React + Vite frontend
+
+Student pages · Shop dashboard · Platform admin
+
+Node.js + Express API
+
+Authentication · Shop isolation · Order management · Pricing · File processing
+
+REST API
+
+Socket.IO
+
+PDF conversion
+
+MongoDB
+
+Shops, users, orders, rates
+
+Persistent disk
+
+Original files and print PDFs
+
+All services run on your server, deployed and managed through Dokploy.
+
+### Technology choices
+
+| Layer               | Choice                                        |
+| ------------------- | --------------------------------------------- |
+| Frontend            | React, Vite, TypeScript                       |
+| UI                  | Tailwind CSS                                  |
+| Backend             | Node.js, Express, TypeScript                  |
+| Database            | MongoDB + Mongoose                            |
+| Live queue          | Socket.IO                                     |
+| File uploads        | Multer with size limits                       |
+| Document conversion | LibreOffice headless + PDF utilities          |
+| Authentication      | Secure HTTP-only session cookie or JWT cookie |
+| Deployment          | Docker Compose through Dokploy                |
+
+For office documents and images, the backend will normalize supported uploads into a print-ready PDF. This gives the shop owner a consistent file to print, while preserving the original upload if needed.
+
+We should support common formats such as PDF, DOCX, PPTX, XLSX, JPG, PNG, and JPEG initially. “All formats” should mean the common printable formats, not arbitrary executables or unsupported proprietary files.
+
+# 2. Repository structure
+
+Use a monorepo so the frontend, backend, and deployment configuration stay together.
+
+print-platform/
+
+apps/web/
+
+Vite React app, public shop pages, customer ordering, owner dashboard, admin screens.
+
+src/pages · src/components · src/features · src/api · src/hooks
+
+apps/api/
+
+Express server, authentication, shops, orders, pricing, document processing, real-time events.
+
+src/routes · src/controllers · src/services · src/models · src/middleware · src/utils
+
+packages/shared/
+
+Shared TypeScript types, order statuses, validation schemas and print settings.
+
+infra/
+
+Dockerfiles, compose.yaml, environment example, database initialization and backup scripts.
+
+README.md
+
+Local development, deployment, backups and setup instructions.
+
+Inside `apps/api/src`, organize the backend by domain:
+
+```
+src/
+├── config/
+├── models/
+│   ├── User.ts
+│   ├── Shop.ts
+│   ├── Order.ts
+│   ├── ShopRate.ts
+│   └── DailySequence.ts
+├── middleware/
+│   ├── authenticate.ts
+│   ├── requireRole.ts
+│   ├── resolveShop.ts
+│   ├── validate.ts
+│   └── errorHandler.ts
+├── modules/
+│   ├── auth/
+│   ├── shops/
+│   ├── orders/
+│   ├── pricing/
+│   ├── documents/
+│   └── admin/
+├── realtime/
+├── services/
+│   ├── fileStorage.ts
+│   ├── documentConverter.ts
+│   ├── pageCounter.ts
+│   └── orderNumber.ts
+├── app.ts
+└── server.ts
+```
+
+Keep controllers thin. Business logic belongs in services, and database queries should be scoped to the appropriate shop.
+
+# 3. MongoDB schema
+
+We'll start with five collections. Each order belongs to exactly one shop, and all shop-owner queries must be scoped by `shopId`.
+
+## A. User
+
+Shop owners and platform administrators use this collection.
+
+```
+{
+  _id: ObjectId,
+  name: string,
+  email: string,
+  passwordHash: string,
+  role: "shop_owner" | "platform_admin",
+  shopIds: ObjectId[],
+  isActive: boolean,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+Use unique normalized email addresses. Passwords must be hashed, never stored as plain text.
+
+## B. Shop
+
+```
+{
+  _id: ObjectId,
+  name: string,
+  slug: string,
+  ownerIds: ObjectId[],
+  status: "active" | "suspended",
+  address?: string,
+  contactPhone?: string,
+  currency: "INR",
+  timezone: "Asia/Kolkata",
+  settings: {
+    maxUploadBytes: number,
+    allowedFormats: string[],
+    maxCopies: number,
+    autoDeleteAfterDays: number
+  },
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+Example public URL:
+
+`print.example.com/s/bms-college-prints`
+
+Each shop gets a unique slug and QR code linking directly to its ordering page.
+
+## C. ShopRate
+
+Shop owners configure their own prices.
+
+```
+{
+  _id: ObjectId,
+  shopId: ObjectId,
+  paperSize: "A4" | "A3",
+  colorMode: "black_white" | "color",
+  sides: "single" | "double",
+  pricePerSide: number,
+  minimumCharge: number,
+  effectiveFrom: Date,
+  updatedAt: Date
+}
+```
+
+Use one clearly defined pricing unit: price per printed side per sheet, in rupees. This makes single-sided and double-sided calculations easier to explain.
+
+## D. Order
+
+```
+{
+  _id: ObjectId,
+  shopId: ObjectId,
+  orderNumber: string,
+  customerName?: string,
+
+  status:
+    | "processing"
+    | "pending"
+    | "accepted"
+    | "rejected"
+    | "completed"
+    | "failed",
+
+  files: [{
+    originalName: string,
+    originalKey: string,
+    printPdfKey: string,
+    originalMimeType: string,
+    pageCount: number
+  }],
+
+  printSettings: {
+    pageSelection: "all" | "custom",
+    pages?: string,
+    copies: number,
+    colorMode: "black_white" | "color",
+    sides: "single" | "double",
+    paperSize: "A4" | "A3",
+    pagesPerSheet: 1 | 2 | 4
+  },
+
+  pricing: {
+    estimatedAmount: number,
+    currency: "INR",
+    rateVersion: string,
+    isEstimate: boolean
+  },
+
+  rejectionReason?: string,
+  createdAt: Date,
+  updatedAt: Date,
+  completedAt?: Date
+}
+```
+
+Use a compound unique index on `{ shopId, orderNumber }`, plus indexes on `{ shopId, status, createdAt }`.
+
+`processing` is important: document conversion can take time, so the shop shouldn't receive a broken or partially processed order.
+
+## E. DailySequence
+
+This collection generates unique, readable queue numbers.
+
+```
+{
+  _id: string, // shopId + date, e.g. shop123-20261011
+  shopId: ObjectId,
+  dateKey: string,
+  nextNumber: number
+}
+```
+
+Use an atomic MongoDB increment to allocate numbers. This prevents two students submitting simultaneously from receiving the same number. A shop might see P001, P002, P003, and so on each day.
+
+Important: keep order IDs and internal database IDs separate from public queue numbers. Queue numbers can reset daily; order IDs must not.
+
+## Pricing rules
+
+Calculate the estimated price on the server, not in the browser.
+
+For each document:
+
+1. Count the actual pages in the normalized PDF.
+2. Resolve the selected pages and multiply by copies.
+3. Calculate physical sheets based on single-sided or double-sided printing and pages per sheet.
+4. Apply the shop's matching rate and minimum charge.
+5. Store a snapshot of the estimated amount and rate version on the order.
+
+For example, five selected pages, two copies, and a rate of ₹2 per printed side gives an estimated ₹20 for black-and-white single-sided printing, before any minimum charge.
+
+Double-sided printing and multiple pages per sheet need separate calculations. Color pages should use the color rate. These are estimates, not payments or guaranteed final charges.
+
+# 4. API routes
+
+Use `/api/v1` as the prefix. Student routes are public, shop-owner routes require authentication, and platform administration has separate permissions.
+
+| Method  | Endpoint                                             | Purpose                                           |
+| ------- | ---------------------------------------------------- | ------------------------------------------------- |
+| `POST`  | `/auth/register`                                     | Register a shop owner and create their shop       |
+| `POST`  | `/auth/login`                                        | Owner login                                       |
+| `POST`  | `/auth/logout`                                       | End the session                                   |
+| `GET`   | `/auth/me`                                           | Get current user and permitted shops              |
+| `GET`   | `/shops/:slug`                                       | Get public shop details and enabled rates         |
+| `POST`  | `/shops/:slug/estimate`                              | Calculate a price estimate                        |
+| `POST`  | `/shops/:slug/orders`                                | Upload and create an order                        |
+| `GET`   | `/orders/:orderId/status`                            | Look up order status using a private lookup token |
+| `GET`   | `/owner/shops`                                       | List shops the owner can access                   |
+| `GET`   | `/owner/shops/:shopId/orders`                        | Get a shop's paginated order queue                |
+| `GET`   | `/owner/shops/:shopId/orders/:orderId`               | View order details                                |
+| `GET`   | `/owner/shops/:shopId/orders/:orderId/files/:fileId` | Securely download a print PDF                     |
+| `PATCH` | `/owner/shops/:shopId/orders/:orderId/status`        | Accept, reject or complete an order               |
+| `GET`   | `/owner/shops/:shopId/rates`                         | View printing rates                               |
+| `PUT`   | `/owner/shops/:shopId/rates`                         | Update printing rates                             |
+| `PATCH` | `/owner/shops/:shopId/settings`                      | Update shop settings                              |
+| `GET`   | `/admin/shops`                                       | Platform-wide shop management                     |
+| `PATCH` | `/admin/shops/:shopId/status`                        | Suspend or reactivate a shop                      |
+
+For order creation, use multipart form data containing the file(s) and print settings. The backend validates, converts, counts pages, calculates the estimate, stores the files, and only then publishes the order as pending.
+
+For status changes, enforce valid transitions:
+
+- `processing → pending` after successful document preparation.
+- `pending → accepted` or `pending → rejected`.
+- `accepted → completed` after the shop finishes the job.
+- `processing → failed` if conversion or validation fails.
+
+Rejected orders cannot be completed, and completed orders cannot be reopened through the ordinary status endpoint.
+
+## Real-time updates
+
+Use Socket.IO rooms scoped to the shop:
+
+- `shop:<shopId>:owners` — authorized owners receive new orders and status updates.
+- Public order status updates — use an opaque, unguessable lookup token, not a public room that reveals all shop orders.
+
+The dashboard should initially fetch orders via REST, then listen for events. If a WebSocket disconnects, it should reconnect and refetch the queue.
+
+# 5. React pages
+
+Use React Router with separate public, owner, and admin layouts.
+
+Public student pages
+
+No student account required.
+
+- `/s/:slug` — shop landing page and upload form.
+- `/s/:slug/checkout` — files, print settings, and estimated price.
+- `/s/:slug/order/:token` — confirmation and order status.
+
+Shop-owner pages
+
+Authentication required.
+
+- `/owner/login` — sign in.
+- `/owner` — overview and active queue.
+- `/owner/orders/:id` — file preview, settings, and status actions.
+- `/owner/settings` — shop details, QR code, and print rates.
+
+Platform administration
+
+- `/admin/shops` — registered shops and status.
+- `/admin/users` — owner accounts.
+- `/admin/audit` — important administrative actions.
+
+### The student ordering flow
+
+Step 1 — Upload
+
+Drag and drop files, or select them from the phone. Show progress and supported formats.
+
+Step 2 — Configure
+
+Choose pages, copies, paper size, color mode, duplex, and pages per sheet. Enter a name if desired.
+
+Step 3 — Review
+
+Show page counts, settings, and the estimated total before submission.
+
+Step 4 — Get a queue number
+
+Display the order number, shop name, estimated price, and status. Let the student return to the status page.
+
+### The owner dashboard
+
+Design the main dashboard around speed rather than analytics. The owner should not have to navigate through multiple pages to print one order.
+
+## Print queue
+
+BMS College Prints · Today
+
+Live
+
+Pending
+
+# 3
+
+Accepted
+
+# 2
+
+Completed
+
+# 18
+
+P014 · Rahul
+
+Assignment.pdf · 12 pages · 2 copies
+
+B&W · Double-sided · Est. ₹24
+
+Pending
+
+Preview PDF
+
+Accept
+
+Reject
+
+Illustrative dashboard layout; sample orders and prices are not live data.
+
+The actual dashboard should show a clear print/download action once an order is accepted, along with a completion button. The shop owner prints through the operating system's usual print dialog; direct printer integration can wait.
+
+# 6. File processing and local storage
+
+This is the most important backend workflow to get right because broken or incorrectly formatted files would defeat the purpose of the product.
+
+## Upload pipeline
+
+1. Validate the shop, file extensions, actual file types, file size, and number of files.
+2. Store incoming files temporarily in a restricted processing directory.
+3. Convert supported Word, PowerPoint, and Excel files to PDF with LibreOffice. Convert images into printable PDFs.
+4. Count PDF pages, validate requested page ranges, and calculate the server-side estimate.
+5. Move validated originals and normalized PDFs into the persistent storage directory.
+6. Create the order and publish it to the shop's live queue only after processing succeeds.
+
+Do not run LibreOffice conversion synchronously in the main API request without a timeout. Use a bounded background processing queue in the API container, with a `processing` status and appropriate failure handling. This keeps large documents from freezing the application.
+
+## Storage layout
+
+Use a Docker persistent volume mounted at `/data/print-platform`.
+
+```
+/data/print-platform/
+├── originals/
+│   └── <shopId>/<orderId>/
+├── print-pdfs/
+│   └── <shopId>/<orderId>/
+├── temp/
+└── logs/
+```
+
+Store relative storage keys in MongoDB, not absolute filesystem paths or public URLs.
+
+Only the API should access these directories. Files must never be served by a public static-files route. The owner downloads them through an authenticated API endpoint that checks shop ownership.
+
+Also implement:
+
+- Upload size and conversion time limits.
+- Random server-generated filenames; never trust an uploaded filename as a filesystem path.
+- Cleanup of abandoned temporary files and expired orders.
+- Per-shop rate limits and request limits.
+- File download audit events and secure error handling.
+
+Since uploaded documents may contain student information, the shop's privacy notice should explain retention and deletion. Keep files only as long as operationally necessary, and make sure backups and retention rules agree.
+
+# 7. Dokploy deployment plan
+
+We'll deploy three containers initially. MongoDB and file storage must persist across application updates and container restarts.
+
+Dokploy + HTTPS reverse proxy
+
+Public domains and TLS certificates
+
+Web
+
+React static build
+
+API
+
+Express + conversion
+
+MongoDB
+
+Persistent database volume
+
+File volume
+
+Persistent document storage
+
+## Example `compose.yaml`
+
+This is the initial deployment shape. It assumes the web image and API image are built from their respective Dockerfiles in the monorepo.
+
+```
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - app-network
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      MONGODB_URI: ${MONGODB_URI}
+      SESSION_SECRET: ${SESSION_SECRET}
+      APP_ORIGIN: ${APP_ORIGIN}
+      STORAGE_ROOT: /data/print-platform
+      MAX_UPLOAD_BYTES: "20971520"
+    volumes:
+      - print-files:/data/print-platform
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "node", "-e",
+        "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet",
+        "-u", "${MONGO_ROOT_USERNAME}",
+        "-p", "${MONGO_ROOT_PASSWORD}",
+        "--authenticationDatabase", "admin",
+        "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  app-network:
+
+volumes:
+  mongo-data:
+  print-files:
+
+```
+
+Before deploying this file:
+
+- Create a MongoDB application user with access only to the application's database. Use that account in `MONGODB_URI`, rather than the root account.
+- Set strong secrets through Dokploy's environment configuration. Do not commit `.env` files or secrets to Git.
+- Pin container image versions, and preferably immutable digests, for production.
+- Do not expose MongoDB's port `27017` publicly.
+- Configure the web and API domains in Dokploy. The API should be reachable at a domain such as `api.print.example.com`, with the web app at `print.example.com`.
+- Configure Socket.IO's WebSocket and polling paths through the proxy. Test reconnections and HTTPS/WSS.
+- Confirm that your Dokploy Compose deployment supports the desired domain routing and persistent volumes; configure the routes in Dokploy rather than assuming Compose labels automatically create them.
+
+The `20 MiB` limit above is an initial per-file limit, not a final capacity decision. Set the frontend's upload limit and the server's multipart parser limit consistently, and tune conversion concurrency to your machine's available memory.
+
+### Environment variables
+
+Create a production environment containing at least:
+
+```
+NODE_ENV=production
+PORT=4000
+
+MONGODB_URI=mongodb://app-user:REDACTED@mongo:27017/printapp?authSource=printapp
+MONGO_ROOT_USERNAME=admin
+MONGO_ROOT_PASSWORD=REPLACE_WITH_STRONG_SECRET
+
+SESSION_SECRET=REPLACE_WITH_LONG_RANDOM_SECRET
+APP_ORIGIN=https://print.example.com
+STORAGE_ROOT=/data/print-platform
+MAX_UPLOAD_BYTES=20971520
+```
+
+These are configuration examples, not working credentials. Initialize the application database and its least-privilege MongoDB user explicitly before relying on the connection string. For a browser frontend on a separate domain, configure credentialed CORS for the exact frontend origin.
+
+### Deployment sequence
+
+1. Prepare the Git repository with both Dockerfiles, Compose, and a production environment template.
+2. Create the application in Dokploy and connect the repository.
+3. Provision the database and file volumes. Verify that they survive container recreation.
+4. Configure domains, HTTPS, API routing, WebSocket support, and frontend API URLs.
+5. Deploy and verify `/health`, owner login, document upload, conversion, and order creation.
+6. Test a full shop workflow and a server restart before inviting the first shop owner.
+
+For production, also set up automated MongoDB backups and file-volume backups. Backups should be copied off the server, encrypted, and periodically tested with an actual restore. A Docker volume alone is not a backup.
+
+# 8. Build order: what we should implement first
+
+I recommend six milestones. Complete and test each before moving to the next.
+
+M1 — Foundation and tenant isolation
+
+First
+
+Monorepo, TypeScript, MongoDB models, authentication, shop creation, authorization middleware, and shop-specific settings.
+
+M2 — Document processing
+
+Upload validation, temporary storage, conversion to PDF, page counting, custom page ranges, and file cleanup.
+
+M3 — Ordering and pricing
+
+Student upload form, print settings, rate configuration, estimate calculation, atomic queue numbering, and order confirmation.
+
+M4 — Shop dashboard
+
+Live queue, file preview/download, accept/reject actions, completion, and order history.
+
+M5 — Reliability and security
+
+Tenant-isolation tests, invalid-file tests, rate limits, upload failure recovery, retention, and audit logging.
+
+M6 — Dokploy deployment and pilot
+
+Production deployment, backup restoration test, QR code generation, and a pilot with one print shop before opening registration broadly.
+
+## 9. Definition of done for the MVP
+
+Before calling the application ready, verify these scenarios:
+
+- Two separate shops can operate simultaneously without seeing each other's orders or files.
+- A student can upload a supported file from a mobile browser and receive a unique order number.
+- Invalid files, oversized uploads, corrupt documents, and invalid page ranges are rejected safely.
+- Estimates change correctly when copies, page ranges, color, or duplex settings change.
+- An owner can accept, reject, download, print, and complete an order.
+- A second browser sees new orders without manually refreshing, and reconnects correctly after losing connectivity.
+- Restarting or redeploying the API does not delete orders or uploaded documents.
+- A user cannot download another shop's documents by guessing an order ID or changing a URL.
+
+My recommendation: start with M1 and M2, especially shop isolation and reliable PDF conversion. Those foundations will prevent the most expensive rewrites later. We can then build the student and owner interfaces on top of stable APIs.
+
+
+################################################################################################
+
+
+Component	Technology
+Frontend	React + Vite + TypeScript
+Styling	Tailwind CSS
+Backend API	Node.js + Express + TypeScript
+Database	MongoDB - postgre sql is better right?
+Document storage	Cloudflare R2 or persistent server storage - we have our own server - we can stores in our server for free 
+Live order updates	Socket.IO - I don't know ablout this
+Deployment	Docker + Dokploy - yes we have dokploy 
+Reverse proxy and HTTPS	Dokploy's configured proxy
+
+
+############################################################################################
+
+Bro, yes — let's finalize the stack based on what you already have. A couple of your questions are worth addressing before we start coding, especially PostgreSQL vs MongoDB and whether we actually need Socket.IO.
+
+## 1. MongoDB vs PostgreSQL: I'd choose PostgreSQL
+
+For this application, PostgreSQL is my recommendation. Your data is highly structured: shops have owners, orders belong to shops, each order has print settings, and each shop has its own pricing rules.
+
+| Consideration                    | PostgreSQL                          | MongoDB                                                           |
+| -------------------------------- | ----------------------------------- | ----------------------------------------------------------------- |
+| Shops, users, orders, pricing    | Excellent relational model          | Good                                                              |
+| Data consistency                 | Strong transactions and constraints | Transactions supported, but relationships are application-managed |
+| Order numbering                  | Transactions and unique constraints | Atomic counters and unique indexes                                |
+| Price calculations and reporting | Excellent SQL support               | Aggregation pipelines                                             |
+| Changing document metadata       | Supports JSONB                      | Naturally flexible documents                                      |
+| Your application                 | My pick                             | Also viable                                                       |
+
+PostgreSQL gives us foreign keys, unique constraints, transactions, and straightforward reporting. We can still store flexible metadata in JSONB when needed.
+
+For example, the database can enforce that an order references a valid shop, while a unique constraint prevents duplicate order numbers within that shop.
+
+One caveat: if you already have a reliable MongoDB instance deployed, migrating to PostgreSQL solely for this project may not be worth the operational overhead. But if we're starting fresh, I'd use PostgreSQL.
+
+## 2. Final technology stack
+
+[React Logo, Interactive, JavaScript, Web Development, Library PNG](https://images.openai.com/static-rsc-4/Fl2k_M2MV9G60-G7WybCJohvSsz5vwqQsQppvr32F68EV081GHJtW9RJC9qzUmIyqYoKRib8QukYMDHeoi9S68vPmo6QWCkUSZ04wokMQon4iVyQtTjASZavNLZps_OHoxGIXYHG61QQxMlUTbtbDTcfPlPzUqtZndtSvw9CQCM?purpose=inline)
+
+Frontend — React + Vite + TypeScript
+
+Student ordering website and shop dashboard.
+
+Keep
+
+[Tailwind CSS Wordmark Logo PNG Vector (SVG) Free Download in 2025 | Word mark logo, Css, Vector logo](https://images.openai.com/static-rsc-4/iecL2Ab__eIJwMwWSQ0fsqaBOaRDQFYLB-PDmu7IyVB8sQq_th1AxXOVxgdKZ0__waTfGwLIHYI4No0nWeY3abP5vL0ik4OIKb_SFE1RmSR6viDxHB2N5Jlaoxv7T0mE1rB805ZIq_i5LMEB_tcI-NrF_idJ0XCmapBO7bf09Bs?purpose=inline)
+
+Styling — Tailwind CSS
+
+Responsive layouts for phones and desktops.
+
+Keep
+
+[Node.js Logo PNG, AI, EPS, CDR, PDF, SVG - iconLogoVector](https://images.openai.com/static-rsc-4/5ANKiVteKuFmwTC_nJQYBiAmqe6ohcaJDmCOzIWHztmvUYEVp567kfYp7A9edvAEOFAXlZn_Ntx7FD28tuY_bKu39l4sg8r3-CtWZYug08GAes2NDeVRr_czhvw8FGMehJ7HFtVG4982zF-8YKbVab_W_c34znXp_YOt6-Syy3U?purpose=inline)
+
+Backend — Node.js + Express + TypeScript
+
+REST APIs, authentication, uploads and order management.
+
+Keep
+
+[Docker Hub Container Image Library | App Containerization](https://images.openai.com/static-rsc-4/Pole4xk5FkyhFJxxWDBh3yHjF1pQlxteoZyEQA0ykJQSPxLpLcdTrKWhkIQ2-SeCQp9ObINiyVMBFzoUkAM9P9RUAWW761nUuSEzxGOPsF9Keb0OX7HGw8IiQD84tSEoRfxnWrmYPSxGM1Bq9IBWZrT-EGb7Ta0uoZ1t6-qsVoY?purpose=inline)
+
+Database — PostgreSQL
+
+Shops, owners, orders, pricing and constraints.
+
+Selected
+
+[Scalingo Docker Image](https://images.openai.com/static-rsc-4/Hx5zrIlEDZQn1kUAE3P1BIqEjPUVB60sHFTPPaLsNEDZk1eDAH4zgtpMkvzgi0ISYdmdv3eCAa7dMQhTc3-pvRmLRUIc9lWJNlsThnnBI9l-EUZvULIb8c4zCuOtP_nT582hjaVL1X88DlK9fpKrZHPucHAZGS8GzwQBLnC-wr4?purpose=inline)
+
+Deployment — Docker + Dokploy
+
+Run the application and database on your existing server.
+
+Keep
+
+[A Powerful System for Veterinary Clinics Staff and Management | Touch4IT](https://images.openai.com/static-rsc-4/DNdhlPEmWYO7Fq2AqDxc_VCJkaDBuXsXDNP7aX9CL0hEHdrtGmved_dsTUoxXaljJg4HOXH6mUM6PGU_8b06coY-e21d0PcJvXwColyA-ZkEv7LznAnD-CLaJoRO0sNgQn963LRClY-Fpz0aww8lb8ptBpd8wZH4F2KB27T4_jQ?purpose=inline)
+
+Live updates — Socket.IO
+
+Notify the shop dashboard when new orders arrive.
+
+Use
+
+[Cos'è Ubuntu e a cosa serve](https://images.openai.com/static-rsc-4/ahzv27rTIE05hZrp486UTFa_gcXg8q_JXF3AF54jkdsPfZ298zZ8CeLr9YwCifebR9v9kraFJo7Fn9Tx6hs8wrFn3DOErSvzT-37WhvKL_tuKBjg7zg7F9HAJlK6uMJcyHmHO0hepjiv54CLAZrY8KuLVZUfi56PGuZphD8OCi4?purpose=inline)
+
+File storage — Your own server
+
+Persistent disk volume for original uploads and print-ready PDFs.
+
+Selected
+
+## 3. What is Socket.IO?
+
+Imagine a student uploads a document at 10:05 AM.
+
+Without live updates, the shop dashboard might need to ask the server every few seconds: “Any new orders?”
+
+With Socket.IO, the server can notify the shop dashboard immediately: “New order P014 has arrived!”
+
+- The owner doesn't need to refresh the page.
+- The dashboard can update the pending-order count automatically.
+- The owner sees status changes as they happen.
+
+It's a library that handles the connection and messages between the browser and server. You don't need to understand all its internals before using it.
+
+We'll implement it after basic order creation works. Until then, ordinary REST APIs are sufficient.
+
+## 4. About storing files on your server
+
+Yes, we can store the documents on your own server without paying for a separate object-storage service. There is still a disk-space, backup, and maintenance cost, but no additional storage-provider bill.
+
+We'll use a persistent Docker volume, for example:
+
+```
+/data/print-platform/
+├── originals/
+├── print-pdfs/
+└── temp/
+```
+
+The API will manage all file access. We won't expose the directory publicly, and we won't store file contents directly in PostgreSQL.
+
+## 5. Our implementation order
+
+1. Foundation: monorepo, Express API, React frontend, PostgreSQL schema, and Docker configuration.
+2. Multi-shop authentication: shop registration, owner login, roles, and tenant isolation.
+3. Document processing: uploads, PDF conversion, page counting, and secure storage.
+4. Orders and pricing: settings, estimated costs, queue numbers, and order creation.
+5. Owner dashboard: live queue, accept/reject, download, and complete.
+6. Dokploy deployment: domains, HTTPS, persistent volumes, backups, and testing.
+
+One important rule from the beginning: every shop-owner query must be authorized against the user's shop membership. Hiding another shop's orders in the UI is not sufficient.
+
+Let's start with the foundation and database schema. We'll build it incrementally, test each milestone, and keep the architecture simple enough to maintain as you onboard more print shops.

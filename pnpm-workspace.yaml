@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 11 blocks dependency build scripts unless explicitly allowed.
+allowBuilds:
+  esbuild: true
+  prisma: true
+  '@prisma/engines': true
+  '@prisma/client': true
+  workerd: false

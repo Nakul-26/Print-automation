@@ -1,0 +1,23 @@
+// Phase 0 schema: only the platform-level settings table.
+// Identity, shops, orders, etc. arrive in later phases as separate reviewed migrations.
+// The database URL lives in prisma.config.ts (Prisma 7) and is passed to the client via an adapter.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Runtime-adjustable platform settings (storage limits, retention, ...).
+/// Values are JSON so a setting can be a number, a string, or a small object.
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
