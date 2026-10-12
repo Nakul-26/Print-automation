@@ -1,13 +1,17 @@
+import type { RequestHandler } from 'express';
 import type { ApiEnv } from '@print/config';
+import { REALTIME, ORDER_LOOKUP_TOKEN_PATTERN } from '@print/contracts';
 import type { RateTable } from '@print/domain';
 import type { Db } from '../../platform/db/client.js';
 import type { BotCheck } from '../../platform/http/turnstile.js';
 import type { Logger } from '../../platform/observability/logger.js';
 import type { JobQueue } from '../../platform/queue/index.js';
+import type { Realtime } from '../../platform/realtime/index.js';
 import type { StorageDriver } from '../../platform/storage/index.js';
 import type { Audit } from '../audit/index.js';
 import type { Conversion } from '../conversion/index.js';
 import type { UsableUpload } from '../documents/index.js';
+import { createOwnerOrdersRouter } from './http/owner-routes.js';
 import { createOrdersRouter } from './http/routes.js';
 import { createOrderRepo } from './repo/order-repo.js';
 import { createOrderService, PREPARE_ORDER_JOB, type ShopInfo } from './service/order-service.js';
@@ -24,6 +28,10 @@ export function createOrders(deps: {
   conversion: Conversion;
   audit: Audit;
   botCheck: BotCheck;
+  realtime: Realtime;
+  requireAuth: RequestHandler;
+  requireShopAccess: RequestHandler;
+  canAccessShop: (shopId: string, userId: string) => Promise<boolean>;
   findShopBySlug: (slug: string) => Promise<ShopInfo | null>;
   findShopById: (id: string) => Promise<ShopInfo | null>;
   getRateTable: (shopId: string) => Promise<RateTable>;
@@ -42,6 +50,7 @@ export function createOrders(deps: {
     audit: deps.audit,
     logger: deps.logger,
     botCheck: deps.botCheck,
+    realtime: deps.realtime,
     findShopBySlug: deps.findShopBySlug,
     findShopById: deps.findShopById,
     getRateTable: deps.getRateTable,
@@ -61,7 +70,37 @@ export function createOrders(deps: {
     },
   );
 
+  // Owners and staff follow their shop's queue; the shop is re-checked on every join.
+  deps.realtime.handle(REALTIME.watchShop, async (client, payload) => {
+    const shopId = (payload as { shopId?: unknown } | null)?.shopId;
+    if (
+      !client.userId ||
+      typeof shopId !== 'string' ||
+      !(await deps.canAccessShop(shopId, client.userId))
+    ) {
+      throw new Error('not_found');
+    }
+    client.join(`shop:${shopId}`);
+  });
+
+  // A student follows one order, identified by the secret token only they hold.
+  deps.realtime.handle(REALTIME.watchOrder, async (client, payload) => {
+    const token = (payload as { token?: unknown } | null)?.token;
+    if (typeof token !== 'string' || !ORDER_LOOKUP_TOKEN_PATTERN.test(token)) {
+      throw new Error('not_found');
+    }
+    const rooms = await orders.roomForOrderToken(token);
+    if (!rooms) throw new Error('not_found');
+    client.join(rooms.room);
+    client.join(rooms.shopRoom);
+  });
+
   return {
+    ownerRouter: createOwnerOrdersRouter({
+      orders,
+      requireAuth: deps.requireAuth,
+      requireShopAccess: deps.requireShopAccess,
+    }),
     router: createOrdersRouter({
       orders,
       orderRateLimitMax: deps.env.ORDER_RATE_LIMIT_MAX,

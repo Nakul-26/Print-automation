@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
-import type { OrderView } from '@print/contracts';
+import { REALTIME, type OrderView } from '@print/contracts';
 import { Card, Notice, Spinner } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { useRealtime } from '../lib/realtime';
 import { describeSettings, formatRupees, statusCopy } from '../lib/format';
 
-const POLL_MS = 4000;
+// Live updates arrive over the socket; this slow poll only covers a socket that is blocked.
+const FALLBACK_POLL_MS = 20_000;
 const LIVE: OrderView['status'][] = ['processing', 'pending', 'accepted', 'printing'];
 
 export function OrderPage() {
@@ -15,36 +17,36 @@ export function OrderPage() {
     (location.state as { order?: OrderView } | null)?.order ?? null,
   );
   const [error, setError] = useState<string | null>(null);
+  const live = order ? LIVE.includes(order.status) : true;
+
+  const refresh = useCallback(async () => {
+    try {
+      const next = await api.getOrder(token);
+      setOrder(next);
+      setError(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setError(
+          'We could not find this order. The link may be wrong, or the order is more than a day old.',
+        );
+      }
+      // Any other failure is a dropped connection; the next event or poll tries again.
+    }
+  }, [token]);
+
+  useRealtime({
+    watch: live ? { event: REALTIME.watchOrder, payload: { token } } : null,
+    changeEvents: [REALTIME.orderChanged, REALTIME.queueChanged],
+    // A little jitter so a busy shop's updates do not hit the server in one burst.
+    onChange: () => void setTimeout(refresh, Math.random() * 400),
+  });
 
   useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const load = async () => {
-      try {
-        const next = await api.getOrder(token);
-        if (cancelled) return;
-        setOrder(next);
-        setError(null);
-        if (LIVE.includes(next.status)) timer = setTimeout(load, POLL_MS);
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 404) {
-          setError(
-            'We could not find this order. The link may be wrong, or the order is more than a day old.',
-          );
-          return;
-        }
-        // A dropped connection should not end the live updates.
-        timer = setTimeout(load, POLL_MS * 2);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [token]);
+    void refresh();
+    if (!live || error) return;
+    const timer = setInterval(() => void refresh(), FALLBACK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [refresh, live, error]);
 
   useEffect(() => {
     if (order) document.title = `${order.queueNumber} · ${order.shopName}`;
@@ -69,7 +71,6 @@ export function OrderPage() {
   }
 
   const copy = statusCopy(order.status);
-  const live = LIVE.includes(order.status);
 
   return (
     <main className="mx-auto w-full max-w-md px-4 pb-10 pt-6 sm:pt-10">

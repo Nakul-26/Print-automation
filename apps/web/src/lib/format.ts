@@ -94,3 +94,15 @@ export function firstAvailable(
     ? { paperSize: pick.paperSize, colorMode: pick.colorMode, sides: pick.sides }
     : { paperSize: 'A4', colorMode: 'black_white', sides: 'single' };
 }
+
+/** "just now", "5 min", "2 h": how long ago something happened, for the shop's queue. */
+export function timeAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${minutes % 60} min`;
+}
+
+/** Which of the shop's printers a job goes to, so the owner can see it at a glance. */
+export const PRINTER_LABEL = { black_white: 'B&W printer', color: 'Colour printer' } as const;

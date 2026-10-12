@@ -36,7 +36,7 @@ async function readError(res: Response): Promise<ApiError> {
   }
 }
 
-async function request<S extends z.ZodType>(
+export async function request<S extends z.ZodType>(
   schema: S,
   path: string,
   init?: RequestInit,

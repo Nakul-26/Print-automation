@@ -1,5 +1,7 @@
 import { Link, Route, Routes } from 'react-router';
 import { HomePage } from './pages/HomePage';
+import { OwnerHome } from './pages/owner/OwnerHome';
+import { QueuePage } from './pages/owner/QueuePage';
 import { OrderPage } from './pages/OrderPage';
 import { ShopPage } from './pages/ShopPage';
 
@@ -9,6 +11,8 @@ export function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/s/:slug" element={<ShopPage />} />
       <Route path="/s/:slug/order/:token" element={<OrderPage />} />
+      <Route path="/owner" element={<OwnerHome />} />
+      <Route path="/owner/:shopId" element={<QueuePage />} />
       <Route
         path="*"
         element={

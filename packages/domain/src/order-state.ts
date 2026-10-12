@@ -12,8 +12,8 @@ export type OrderStatus =
 const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   draft: ['processing'],
   processing: ['pending', 'failed'],
-  pending: ['accepted', 'rejected', 'expired'],
-  accepted: ['printing', 'completed', 'expired'],
+  pending: ['accepted', 'printing', 'rejected', 'expired'],
+  accepted: ['printing', 'completed', 'rejected', 'expired'],
   printing: ['completed', 'accepted'],
   completed: [],
   rejected: [],

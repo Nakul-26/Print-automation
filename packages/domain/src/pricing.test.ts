@@ -117,7 +117,9 @@ describe('priceOrder', () => {
 describe('helpers', () => {
   it('finds rates by key', () => {
     expect(findRate(table, { paperSize: 'A4', colorMode: 'color', sides: 'single' })).toBeDefined();
-    expect(findRate(table, { paperSize: 'A3', colorMode: 'color', sides: 'single' })).toBeUndefined();
+    expect(
+      findRate(table, { paperSize: 'A3', colorMode: 'color', sides: 'single' }),
+    ).toBeUndefined();
   });
   it('formats queue numbers and rupees', () => {
     expect(formatQueueNumber(7)).toBe('P007');

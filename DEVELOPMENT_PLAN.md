@@ -323,7 +323,7 @@ Exit: DOCX/PPTX/XLSX samples convert with adjustable settings; page count reflec
 Rates and printer presets, estimate engine (unit-tested), atomic daily order numbers, student wizard, confirmation and status page, Turnstile and rate limits.
 Exit: mobile student places an order; estimate matches hand calculations; concurrent submissions never duplicate numbers.
 
-**Phase 5: Realtime and owner dashboard (2 weeks)**
+**Phase 5: Realtime and owner dashboard (2 weeks) — DONE**
 Socket.IO gateway, live queue, accept/reject/complete, previews, instruction chips and printer preset display, final-amount override, notification sound, QR code generator, reconnect/refetch.
 Exit: two-browser end-to-end flow works, including after a dropped connection.
 

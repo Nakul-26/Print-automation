@@ -10,6 +10,7 @@ import type { Db } from './platform/db/client.js';
 import { createBotCheck } from './platform/http/turnstile.js';
 import type { Logger } from './platform/observability/logger.js';
 import { PgBossQueue } from './platform/queue/index.js';
+import { createRealtime } from './platform/realtime/index.js';
 import { LocalDiskStorage } from './platform/storage/index.js';
 
 /**
@@ -27,8 +28,16 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     maxPages: env.MAX_PDF_PAGES,
   });
 
+  const identityRef: { userId?: (header: string | undefined) => Promise<string | null> } = {};
+  const realtime = createRealtime({
+    logger,
+    allowedOrigin: env.APP_ORIGIN,
+    authenticate: (header) => identityRef.userId?.(header) ?? Promise.resolve(null),
+  });
+
   const audit = createAudit({ db, logger });
   const identity = createIdentity({ db, env, audit });
+  identityRef.userId = identity.userIdFromCookieHeader;
   const shops = createShops({ db, audit, requireAuth });
   const documents = createDocuments({
     db,
@@ -58,6 +67,10 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
       secretKey: env.TURNSTILE_SECRET_KEY,
       siteKey: env.TURNSTILE_SITE_KEY,
     }),
+    realtime,
+    requireAuth,
+    requireShopAccess: shops.requireShopAccess,
+    canAccessShop: shops.canAccess,
     findShopBySlug: shops.findBySlug,
     findShopById: shops.findById,
     getRateTable: pricing.getRateTable,
@@ -73,9 +86,13 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     orders,
     conversion,
     storage,
+    realtime,
     /** Starts background job processing. Call once at boot (and in tests that need jobs). */
     start: () => queue.start(),
-    stop: () => queue.stop(),
+    stop: async () => {
+      await realtime.close();
+      await queue.stop();
+    },
   };
 }
 

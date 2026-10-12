@@ -24,6 +24,7 @@ async function main(): Promise<void> {
     ],
   });
   const server = createServer(app);
+  container.realtime.attach(server);
 
   server.listen(env.PORT, () => logger.info({ port: env.PORT }, 'api listening'));
 

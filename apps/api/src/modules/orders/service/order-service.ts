@@ -4,11 +4,14 @@ import {
   type EstimateItem,
   type EstimateRequest,
   type EstimateResponse,
+  type OrderActionBody,
   type OrderItemInput,
   type OrderView,
+  type OwnerOrder,
   type PublicShopInfo,
 } from '@print/contracts';
 import {
+  canTransition,
   formatQueueNumber,
   parsePageRanges,
   priceItem,
@@ -19,7 +22,9 @@ import { HttpError } from '../../../platform/http/error-handler.js';
 import type { BotCheck } from '../../../platform/http/turnstile.js';
 import type { Logger } from '../../../platform/observability/logger.js';
 import type { JobQueue } from '../../../platform/queue/index.js';
+import type { Realtime } from '../../../platform/realtime/index.js';
 import type { StorageDriver } from '../../../platform/storage/index.js';
+import { REALTIME } from '@print/contracts';
 import type { Audit } from '../../audit/index.js';
 import type { Conversion } from '../../conversion/index.js';
 import type { UsableUpload } from '../../documents/index.js';
@@ -46,6 +51,7 @@ export interface OrderServiceDeps {
   audit: Audit;
   logger: Logger;
   botCheck: BotCheck;
+  realtime: Realtime;
   findShopBySlug: (slug: string) => Promise<ShopInfo | null>;
   findShopById: (id: string) => Promise<ShopInfo | null>;
   getRateTable: (shopId: string) => Promise<RateTable>;
@@ -162,6 +168,39 @@ export function createOrderService(deps: OrderServiceDeps) {
       });
     }
     return resolved;
+  }
+
+  /** Tells the shop's dashboards and the student's ticket that something changed. They refetch over HTTP. */
+  function announce(order: Pick<OrderRecord, 'shopId' | 'lookupTokenHash'>): void {
+    deps.realtime.emit(`shop:${order.shopId}`, REALTIME.queueChanged);
+    deps.realtime.emit(`order:${order.lookupTokenHash}`, REALTIME.orderChanged);
+  }
+
+  function toOwnerView(order: OrderRecord): OwnerOrder {
+    return {
+      id: order.id,
+      queueNumber: formatQueueNumber(order.queueNumber),
+      status: order.status as OwnerOrder['status'],
+      customerName: order.customerName,
+      items: order.items.map((item) => ({
+        id: item.id,
+        originalName: item.originalName,
+        pageCount: item.pageCount,
+        selectedPageCount: item.selectedPageCount,
+        settings: item.printSettings,
+        printedSides: item.printedSides,
+        sheets: item.sheets,
+        amountPaise: item.amountPaise,
+        fileReady: item.printPdfKey !== null,
+      })),
+      estimatedAmountPaise: order.estimatedAmountPaise,
+      finalAmountPaise: order.finalAmountPaise,
+      currency: order.currency,
+      rejectionReason: order.rejectionReason,
+      failureReason: order.failureReason,
+      createdAt: order.createdAt.toISOString(),
+      expiresAt: order.expiresAt.toISOString(),
+    };
   }
 
   function toView(order: OrderRecord, shopName: string, aheadCount: number): OrderView {
@@ -318,6 +357,7 @@ export function createOrderService(deps: OrderServiceDeps) {
         },
       });
 
+      announce(order);
       return { lookupToken, order: toView(order, shop.name, await repo.aheadCount(order)) };
     },
 
@@ -326,6 +366,93 @@ export function createOrderService(deps: OrderServiceDeps) {
       if (!order) throw new HttpError(404, 'Order not found', 'not_found');
       const shop = await deps.findShopById(order.shopId);
       return toView(order, shop?.name ?? '', await repo.aheadCount(order));
+    },
+
+    /** The shop's working list: what is waiting, being printed, or finished in the last day. */
+    async listQueue(shopId: string): Promise<OwnerOrder[]> {
+      const since = new Date(now().getTime() - 24 * 3_600_000);
+      const orders = await repo.listForShop(shopId, since, 200);
+      return orders.map(toOwnerView);
+    },
+
+    /** Applies one of the owner's actions. The shop id comes from the authenticated tenant, never the URL alone. */
+    async act(
+      tenant: { shopId: string; userId: string },
+      orderId: string,
+      body: OrderActionBody,
+    ): Promise<OwnerOrder> {
+      const order = await repo.findForShop(tenant.shopId, orderId);
+      if (!order) throw new HttpError(404, 'Order not found', 'not_found');
+
+      const target = { print: 'printing', reject: 'rejected', complete: 'completed' }[
+        body.action
+      ] as OrderRecord['status'];
+      if (!canTransition(order.status, target)) {
+        throw new HttpError(
+          409,
+          'This order has already moved on. The list has been refreshed.',
+          'invalid_transition',
+        );
+      }
+      const from = (['pending', 'accepted', 'printing'] as const).filter((s) =>
+        canTransition(s, target),
+      );
+
+      const updated = await repo.transition(tenant.shopId, orderId, from, {
+        status: target,
+        ...(body.action === 'reject' ? { rejectionReason: body.reason } : {}),
+        ...(body.action === 'complete'
+          ? {
+              finalAmountPaise: body.finalAmountPaise ?? order.estimatedAmountPaise,
+              completedAt: now(),
+            }
+          : {}),
+      });
+      if (!updated) {
+        throw new HttpError(
+          409,
+          'This order has already moved on. The list has been refreshed.',
+          'invalid_transition',
+        );
+      }
+      await audit.record({
+        actorType: 'user',
+        actorId: tenant.userId,
+        shopId: tenant.shopId,
+        action: `order.${body.action}`,
+        entity: 'order',
+        entityId: orderId,
+        metadata: {
+          queueNumber: order.queueNumber,
+          ...(body.action === 'complete' && body.finalAmountPaise !== undefined
+            ? { finalAmountPaise: body.finalAmountPaise }
+            : {}),
+        },
+      });
+      announce(updated);
+      return toOwnerView(updated);
+    },
+
+    /** The exact PDF that will be printed, for the owner's preview or manual download. */
+    async openPrintFile(shopId: string, orderId: string, itemId: string) {
+      const order = await repo.findForShop(shopId, orderId);
+      const item = order?.items.find((i) => i.id === itemId);
+      if (!order || !item?.printPdfKey || order.filesPurgedAt) {
+        throw new HttpError(404, 'File not found', 'not_found');
+      }
+      return {
+        stream: storage.createReadStream(item.printPdfKey),
+        bytes: item.printPdfBytes,
+        fileName: `${formatQueueNumber(order.queueNumber)}-${item.position + 1}.pdf`,
+      };
+    },
+
+    /** Which realtime room a student's order token maps to (validated by hash lookup). */
+    async roomForOrderToken(token: string): Promise<{ room: string; shopRoom: string } | null> {
+      const order = await repo.findByLookupHash(hashToken(token));
+      return order
+        ? { room: `order:${order.lookupTokenHash}`, shopRoom: `shop:${order.shopId}` }
+        : null;
     },
 
     /**
@@ -368,6 +495,7 @@ export function createOrderService(deps: OrderServiceDeps) {
         logger.error({ err, orderId }, 'failed to prepare order');
         await repo.markFailed(order.id, 'Could not prepare the documents for printing');
       }
+      announce(order);
     },
   };
 }

@@ -48,8 +48,7 @@ export interface ItemPrice {
 }
 
 export type ItemPriceResult =
-  | ({ ok: true } & ItemPrice)
-  | { ok: false; error: 'rate_unavailable' | 'invalid_input' };
+  ({ ok: true } & ItemPrice) | { ok: false; error: 'rate_unavailable' | 'invalid_input' };
 
 export function findRate(
   table: RateTable,
@@ -98,7 +97,10 @@ export interface OrderTotal {
   totalPaise: number;
 }
 
-export function priceOrder(itemAmountsPaise: readonly number[], minimumChargePaise: number): OrderTotal {
+export function priceOrder(
+  itemAmountsPaise: readonly number[],
+  minimumChargePaise: number,
+): OrderTotal {
   const subtotalPaise = itemAmountsPaise.reduce((sum, a) => sum + a, 0);
   const totalPaise = Math.max(subtotalPaise, minimumChargePaise);
   return {

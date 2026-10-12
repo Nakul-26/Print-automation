@@ -24,6 +24,11 @@ export function createShops(deps: { db: Db; audit: Audit; requireAuth: RequestHa
     /** Public lookup used by student-facing routes (no membership required). */
     findBySlug: repo.findBySlug,
     findById: repo.findById,
+    /** True when the user belongs to the shop and the shop is not suspended. */
+    async canAccess(shopId: string, userId: string): Promise<boolean> {
+      const membership = await repo.findMembership(shopId, userId);
+      return membership !== null && membership.shop.status !== 'suspended';
+    },
     createShop: service.createShop,
     addMember: service.addMember,
   };

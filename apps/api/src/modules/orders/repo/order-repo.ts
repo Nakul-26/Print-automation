@@ -27,6 +27,7 @@ export interface OrderRecord {
   shopId: string;
   queueDate: string;
   queueNumber: number;
+  lookupTokenHash: string;
   status: OrderStatus;
   customerName: string | null;
   estimatedAmountPaise: number;
@@ -36,6 +37,7 @@ export interface OrderRecord {
   failureReason: string | null;
   createdAt: Date;
   expiresAt: Date;
+  filesPurgedAt: Date | null;
   items: OrderItemRecord[];
 }
 
@@ -141,6 +143,54 @@ export function createOrderRepo(db: Db) {
     async findByLookupHash(lookupTokenHash: string): Promise<OrderRecord | null> {
       const row = await db.order.findUnique({ where: { lookupTokenHash }, include: withItems });
       return row as unknown as OrderRecord | null;
+    },
+
+    /** Orders a shop still has to deal with, plus everything finished in the last day, oldest first. */
+    async listForShop(shopId: string, finishedSince: Date, limit: number): Promise<OrderRecord[]> {
+      const rows = await db.order.findMany({
+        where: {
+          shopId,
+          OR: [
+            { status: { in: ['pending', 'accepted', 'printing'] } },
+            {
+              status: { in: ['processing', 'completed', 'rejected', 'failed'] },
+              updatedAt: { gte: finishedSince },
+            },
+          ],
+        },
+        include: withItems,
+        orderBy: [{ queueDate: 'asc' }, { queueNumber: 'asc' }],
+        take: limit,
+      });
+      return rows as unknown as OrderRecord[];
+    },
+
+    /** Always scoped by shop: an order id from another shop is simply not found. */
+    async findForShop(shopId: string, id: string): Promise<OrderRecord | null> {
+      const row = await db.order.findFirst({ where: { id, shopId }, include: withItems });
+      return row as unknown as OrderRecord | null;
+    },
+
+    /**
+     * Moves an order to a new status only if it is still in one of the expected states, so two
+     * people clicking at once cannot both win. Returns the updated order, or null if it had moved on.
+     */
+    async transition(
+      shopId: string,
+      id: string,
+      from: OrderStatus[],
+      data: {
+        status: OrderStatus;
+        rejectionReason?: string;
+        finalAmountPaise?: number;
+        completedAt?: Date;
+      },
+    ): Promise<OrderRecord | null> {
+      const { count } = await db.order.updateMany({
+        where: { id, shopId, status: { in: from } },
+        data,
+      });
+      return count === 1 ? this.findForShop(shopId, id) : null;
     },
 
     /** Orders in front of this one that are still waiting to be dealt with. */

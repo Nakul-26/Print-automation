@@ -1,7 +1,12 @@
 import type { ApiEnv } from '@print/config';
 import type { Db } from '../../platform/db/client.js';
 import type { Audit } from '../audit/index.js';
-import { authenticate, requireAuth, requirePlatformAdmin } from './http/middleware.js';
+import {
+  authenticate,
+  requireAuth,
+  requirePlatformAdmin,
+  SESSION_COOKIE,
+} from './http/middleware.js';
 import { createAuthRouter } from './http/routes.js';
 import { createIdentityRepo } from './repo/identity-repo.js';
 import { createAuthService } from './service/auth-service.js';
@@ -25,6 +30,19 @@ export function createIdentity(deps: { db: Db; env: ApiEnv; audit: Audit }) {
       loginRateLimitMax: deps.env.LOGIN_RATE_LIMIT_MAX,
     }),
     authenticate: authenticate(sessions),
+    /** For non-Express callers such as the realtime gateway: the user id behind a Cookie header. */
+    async userIdFromCookieHeader(header: string | undefined): Promise<string | null> {
+      const match = header?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
+      if (!match?.[1]) return null;
+      let token: string;
+      try {
+        token = decodeURIComponent(match[1]);
+      } catch {
+        return null;
+      }
+      const session = await sessions.resolve(token);
+      return session?.user.id ?? null;
+    },
     users: {
       create: auth.createUser,
       findByEmail: auth.findUserByEmail,
