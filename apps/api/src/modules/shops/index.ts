@@ -7,9 +7,18 @@ import { createShopRepo } from './repo/shop-repo.js';
 import { createShopService } from './service/shop-service.js';
 
 /** Public API of the shops module: shops, membership, and tenant access control. */
-export function createShops(deps: { db: Db; audit: Audit; requireAuth: RequestHandler }) {
+export function createShops(deps: {
+  db: Db;
+  audit: Audit;
+  requireAuth: RequestHandler;
+  onSuspended?: (shopId: string) => void;
+}) {
   const repo = createShopRepo(deps.db);
-  const service = createShopService({ repo, audit: deps.audit });
+  const service = createShopService({
+    repo,
+    audit: deps.audit,
+    ...(deps.onSuspended ? { onSuspended: deps.onSuspended } : {}),
+  });
   const shopAccess = requireShopAccess(repo);
 
   return {
@@ -29,9 +38,16 @@ export function createShops(deps: { db: Db; audit: Audit; requireAuth: RequestHa
       const membership = await repo.findMembership(shopId, userId);
       return membership !== null && membership.shop.status !== 'suspended';
     },
+    checkSlug: service.checkSlug,
     createShop: service.createShop,
     addMember: service.addMember,
+    changeStatus: service.changeStatus,
+    setLimits: service.setLimits,
+    listForAdmin: repo.listForAdmin,
   };
 }
+
+export type { ShopAction } from './service/shop-service.js';
+export type { AdminShopRecord, ShopRecord } from './repo/shop-repo.js';
 
 export type Shops = ReturnType<typeof createShops>;

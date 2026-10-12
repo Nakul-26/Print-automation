@@ -62,7 +62,8 @@ export interface UploadServiceDeps {
   logger: Logger;
   tokenSecret: string;
   retentionHours: number;
-  maxStorageBytes: number;
+  /** The platform-wide storage limit in bytes; read on every upload so an admin can change it live. */
+  maxStorageBytes: () => Promise<number> | number;
   now?: () => Date;
 }
 
@@ -193,6 +194,8 @@ export function createUploadService(deps: UploadServiceDeps) {
       tempPath: string;
       originalName: string;
       sizeBytes: number;
+      /** This shop's own cap in bytes (null = none) and whether it may take Office files. */
+      limits?: { storageQuotaBytes: number | null; officeFiles: boolean };
     }): Promise<{ token: string; upload: UploadRecord }> {
       try {
         if (input.sizeBytes === 0) throw new HttpError(400, 'The file is empty', 'empty_file');
@@ -210,9 +213,25 @@ export function createUploadService(deps: UploadServiceDeps) {
           throw new HttpError(415, UNSUPPORTED_LEGACY_MESSAGE, 'unsupported_type');
         }
 
-        // Keep within the platform storage limit.
-        const used = await repo.storedBytes();
-        if (used + input.sizeBytes * 2 > deps.maxStorageBytes) {
+        if (detected.kind === 'office' && input.limits?.officeFiles === false) {
+          throw new HttpError(
+            415,
+            'This shop only accepts PDF and image files. Save your document as a PDF and upload that.',
+            'unsupported_type',
+          );
+        }
+
+        // Keep within the shop's own cap and the platform storage limit.
+        const needed = input.sizeBytes * 2;
+        const shopCap = input.limits?.storageQuotaBytes ?? null;
+        if (shopCap !== null && (await repo.storedBytes(input.shopId)) + needed > shopCap) {
+          throw new HttpError(
+            503,
+            'This shop cannot take more files right now. Please try again in a while.',
+            'shop_storage_full',
+          );
+        }
+        if ((await repo.storedBytes()) + needed > (await deps.maxStorageBytes())) {
           throw new HttpError(
             503,
             'This shop is very busy right now. Please try again in a few minutes.',

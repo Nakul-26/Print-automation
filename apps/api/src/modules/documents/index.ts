@@ -27,6 +27,8 @@ export function createDocuments(deps: {
   /** How many jobs of each lane this process may run at once. */
   concurrency: { quick: number; office: number };
   findShopBySlug: (slug: string) => Promise<PublicShop | null>;
+  /** The live platform storage limit; defaults to the environment value. */
+  maxStorageBytes?: () => Promise<number> | number;
 }) {
   const repo = createUploadRepo(deps.db);
   const uploads = createUploadService({
@@ -37,7 +39,7 @@ export function createDocuments(deps: {
     logger: deps.logger,
     tokenSecret: deps.env.SESSION_SECRET,
     retentionHours: deps.env.RETENTION_HOURS,
-    maxStorageBytes: deps.env.STORAGE_MAX_BYTES,
+    maxStorageBytes: deps.maxStorageBytes ?? (() => deps.env.STORAGE_MAX_BYTES),
   });
 
   deps.queue.register<ProcessUploadJob>(PROCESS_UPLOAD_JOB, (job) => uploads.process(job), {
@@ -58,6 +60,8 @@ export function createDocuments(deps: {
       purgeExpired: uploads.purgeExpired.bind(uploads),
       storedUploads: uploads.storedUploads.bind(uploads),
       purgeUploads: uploads.purgeUploads.bind(uploads),
+      storedBytes: () => repo.storedBytes(),
+      storedBytesByShop: () => repo.storedBytesByShop(),
     },
     router: createUploadsRouter({
       uploads,

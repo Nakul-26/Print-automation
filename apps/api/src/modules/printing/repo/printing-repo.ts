@@ -127,6 +127,16 @@ export function createPrintingRepo(db: Db) {
       return row && !row.revokedAt ? toDevice(row) : null;
     },
 
+    /** Ids of shops that have a printing app linked (online or not). */
+    async shopsWithDevice(): Promise<Set<string>> {
+      const rows = await db.agentDevice.findMany({
+        where: { revokedAt: null },
+        select: { shopId: true },
+        distinct: ['shopId'],
+      });
+      return new Set(rows.map((r) => r.shopId));
+    },
+
     async activeDevice(shopId: string): Promise<DeviceRecord | null> {
       const row = await db.agentDevice.findFirst({
         where: { shopId, revokedAt: null },

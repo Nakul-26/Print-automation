@@ -1,11 +1,12 @@
 import type { ApiEnv } from '@print/config';
 import { Pool } from 'pg';
+import { createAdmin } from './modules/admin/index.js';
 import { createAudit } from './modules/audit/index.js';
 import { createConversion } from './modules/conversion/index.js';
 import { createDocuments } from './modules/documents/index.js';
-import { createIdentity, requireAuth } from './modules/identity/index.js';
+import { createIdentity, requireAuth, requirePlatformAdmin } from './modules/identity/index.js';
 import { createOrders } from './modules/orders/index.js';
-import { createPricing } from './modules/pricing/index.js';
+import { createPricing, DEFAULT_RATES } from './modules/pricing/index.js';
 import { createPrinting } from './modules/printing/index.js';
 import { createRetention } from './modules/retention/index.js';
 import { createShops } from './modules/shops/index.js';
@@ -15,6 +16,7 @@ import { createBotCheck } from './platform/http/turnstile.js';
 import type { Logger } from './platform/observability/logger.js';
 import { PgBossQueue } from './platform/queue/index.js';
 import { createRealtime } from './platform/realtime/index.js';
+import { createSettings } from './platform/settings/index.js';
 import { LocalDiskStorage } from './platform/storage/index.js';
 
 /**
@@ -57,6 +59,11 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
   });
 
   const audit = createAudit({ db, logger });
+  const settings = createSettings({ db, defaults: { storageMaxBytes: env.STORAGE_MAX_BYTES } });
+  const botCheck = createBotCheck({
+    secretKey: env.TURNSTILE_SECRET_KEY,
+    siteKey: env.TURNSTILE_SITE_KEY,
+  });
   const identity = createIdentity({
     db,
     env,
@@ -65,7 +72,16 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     onSessionEnded: (userId) => realtime.disconnectUser(userId),
   });
   identityRef.userId = identity.userIdFromCookieHeader;
-  const shops = createShops({ db, audit, requireAuth });
+  const shops = createShops({
+    db,
+    audit,
+    requireAuth,
+    // A suspended shop loses its live connections at once: the owner's dashboards and the printing app.
+    onSuspended: (shopId) => {
+      realtime.disconnectRoom(`shop:${shopId}`);
+      realtime.agents.disconnectShop(shopId);
+    },
+  });
   const documents = createDocuments({
     db,
     env,
@@ -75,6 +91,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     conversion,
     concurrency: { quick: capacity.jobs, office: capacity.office },
     findShopBySlug: shops.findBySlug,
+    maxStorageBytes: settings.storageMaxBytes,
   });
 
   const pricing = createPricing({
@@ -100,6 +117,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
       touch: (orderId) => ordersRef.current!.api.touch(orderId),
     }),
     findShopName: async (shopId) => (await shops.findById(shopId))?.name ?? null,
+    isShopSuspended: async (shopId) => (await shops.findById(shopId))?.status === 'suspended',
   });
   printingRef.authenticate = printing.authenticateAgent;
   const orders = createOrders({
@@ -112,10 +130,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     jobConcurrency: capacity.jobs,
     previewGate,
     audit,
-    botCheck: createBotCheck({
-      secretKey: env.TURNSTILE_SECRET_KEY,
-      siteKey: env.TURNSTILE_SITE_KEY,
-    }),
+    botCheck,
     realtime,
     printing: printing.api,
     requireAuth,
@@ -136,11 +151,52 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     audit,
     documents: documents.api,
     orders: orders.api,
+    maxBytes: settings.storageMaxBytes,
+  });
+
+  const admin = createAdmin({
+    settings,
+    audit,
+    requireAuth,
+    requirePlatformAdmin,
+    botVerify: (token, ip) => botCheck.verify(token, ip),
+    applyRateLimitMax: env.APPLY_RATE_LIMIT_MAX,
+    botSiteKey: botCheck.siteKey,
+    ports: {
+      shops: {
+        checkSlug: shops.checkSlug,
+        createShop: (input) => shops.createShop(input),
+        addOwner: (shopId, userId) => shops.addMember({ shopId, userId, role: 'owner' }),
+        listForAdmin: shops.listForAdmin,
+        changeStatus: shops.changeStatus,
+        setLimits: shops.setLimits,
+      },
+      identity: {
+        findUserByEmail: identity.users.findByEmail,
+        createUser: identity.users.create,
+      },
+      applyStarterRates: (shopId) => pricing.setRates(shopId, DEFAULT_RATES),
+      usage: {
+        storageByShop: documents.api.storedBytesByShop,
+        storageTotal: async () => {
+          const [uploads, printFiles] = await Promise.all([
+            documents.api.storedBytes(),
+            orders.api.printFileUsage(),
+          ]);
+          return uploads + printFiles.reduce((sum, p) => sum + p.bytes, 0);
+        },
+        ordersByShop: orders.api.countsByShop,
+        shopsWithRates: pricing.shopsWithRates,
+        shopsWithPrintingApp: printing.api.shopsWithPrintingApp,
+      },
+    },
   });
 
   return {
     audit,
     retention,
+    admin,
+    settings,
     printing,
     identity,
     shops,

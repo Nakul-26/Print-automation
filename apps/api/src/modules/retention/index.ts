@@ -24,7 +24,7 @@ export function createRetention(deps: {
   documents: DocumentsPort;
   orders: OrdersPort;
   /** The storage limit in bytes. A function so the admin panel can change it without a restart. */
-  maxBytes?: () => number;
+  maxBytes?: () => Promise<number> | number;
 }) {
   const service = createRetentionService({
     documents: deps.documents,

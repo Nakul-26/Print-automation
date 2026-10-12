@@ -59,6 +59,7 @@ export function createPricing(deps: {
   return {
     ownerRouter,
     getRateTable: (shopId: string): Promise<RateTable> => repo.getRateTable(shopId),
+    shopsWithRates: () => repo.shopsWithRates(),
     setRates: (shopId: string, body: RatesBody): Promise<void> => repo.replaceRates(shopId, body),
   };
 }

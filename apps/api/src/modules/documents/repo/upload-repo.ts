@@ -244,7 +244,7 @@ export function createUploadRepo(db: Db) {
      * Bytes currently held on disk for uploads whose files have not been purged. Summed in the
      * database: every upload checks this, so it must not read every row into memory.
      */
-    async storedBytes(): Promise<number> {
+    async storedBytes(shopId?: string): Promise<number> {
       const rows = await db.$queryRaw<{ total: number }[]>`
         SELECT COALESCE(SUM(
           size_bytes + CASE
@@ -254,8 +254,25 @@ export function createUploadRepo(db: Db) {
           END
         ), 0)::float8 AS total
         FROM uploads
-        WHERE files_purged_at IS NULL`;
+        WHERE files_purged_at IS NULL
+          AND (${shopId ?? null}::uuid IS NULL OR shop_id = ${shopId ?? null}::uuid)`;
       return Number(rows[0]?.total ?? 0);
+    },
+
+    /** Stored bytes per shop, for the admin's usage view. */
+    async storedBytesByShop(): Promise<Map<string, number>> {
+      const rows = await db.$queryRaw<{ shop_id: string; total: number }[]>`
+        SELECT shop_id::text AS shop_id, COALESCE(SUM(
+          size_bytes + CASE
+            WHEN jsonb_typeof(conversion_variants) = 'object' AND conversion_variants <> '{}'::jsonb
+              THEN (SELECT COALESCE(SUM((v.value ->> 'size')::bigint), 0) FROM jsonb_each(conversion_variants) v)
+            ELSE COALESCE(normalized_size_bytes, 0)
+          END
+        ), 0)::float8 AS total
+        FROM uploads
+        WHERE files_purged_at IS NULL
+        GROUP BY shop_id`;
+      return new Map(rows.map((r) => [r.shop_id, Number(r.total)]));
     },
 
     /**

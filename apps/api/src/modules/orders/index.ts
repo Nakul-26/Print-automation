@@ -112,6 +112,7 @@ export function createOrders(deps: {
     api: {
       retire: orders.retire,
       printFileUsage: orders.printFileUsage,
+      countsByShop: orders.countsByShop,
       evictFiles: orders.evictFiles,
       markPrinted: orders.markPrinted,
       touch: orders.touch,

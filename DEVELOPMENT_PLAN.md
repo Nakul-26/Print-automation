@@ -340,9 +340,10 @@ Windows agent first (Electron tray app + bundled SumatraPDF, MSIX package publis
 Exit: on a clean Windows PC, the owner completes setup in a few steps (install from the Store, type the pairing code) with no security warning, sees "Printing connected ✓", and from then on clicking Print produces the job on the right printer with the right colour, sides, and copies, without touching the print dialog.
 Done: agent protocol and pairing, printer detection and auto-assignment, job queue with retry and hand-off, test page, dashboard setup panel and order-card print state, Electron app with bundled SumatraPDF, NSIS installer build, AppX (Store) build config, headless runner and virtual-printer testing (ADR 0010, docs/print-agent-setup.md). Still to do with hardware or accounts: check colour, the duplex flip edge and margins on the real printers during the pilot setup (phase 9); Microsoft Store submission (needs the Partner Center account); CUPS support; hosting the auto-update feed for the manual installer.
 
-**Phase 8: Platform admin and onboarding (1-2 weeks)**
+**Phase 8: Platform admin and onboarding (1-2 weeks) — DONE**
 Admin panel, shop applications and approval flow, per-shop feature flags, storage limit settings (global 5 GB default, per-shop), usage views.
 Exit: a new shop can apply, get approved, set rates and printers, and start receiving orders without developer help; changing the storage limit takes effect without a redeploy.
+Done: public apply page, owner Prices panel, admin panel (approve/suspend/reactivate, per-shop storage cap and Office switch, live platform storage limit, activity log), immediate suspension cut-off of dashboards and printing apps (ADR 0011). Not done: email notifications, staff invitations.
 
 **Phase 9: Deployment and pilot (1-2 weeks + pilot time)**
 Production Dockerfiles and compose, Dokploy setup (domains, HTTPS, volumes, healthchecks, secrets), least-privilege DB user, automated off-server encrypted DB backups with a **restore test**, restart/redeploy test, staging environment. Pilot with one shop for 2 weeks.

@@ -76,6 +76,8 @@ export const ApiEnvSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_SITE_KEY: z.string().min(1).optional(),
   /** Max orders per IP per 15 minutes. */
+  /** New-shop applications allowed per connection every 15 minutes. */
+  APPLY_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   ORDER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   /** Max price estimates per IP per 15 minutes. */
   ESTIMATE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),

@@ -1,5 +1,7 @@
 import { Link, Route, Routes, useLocation } from 'react-router';
 import { Footer } from './components/Footer';
+import { AdminPage } from './pages/admin/AdminPage';
+import { ApplyPage } from './pages/ApplyPage';
 import { HomePage } from './pages/HomePage';
 import { OwnerHome } from './pages/owner/OwnerHome';
 import { QueuePage } from './pages/owner/QueuePage';
@@ -10,7 +12,8 @@ import { ShopPage } from './pages/ShopPage';
 export function App() {
   const { pathname } = useLocation();
   // Students see the privacy note; the shop's own pages stay uncluttered.
-  const showFooter = !pathname.startsWith('/owner') && pathname !== '/privacy';
+  const showFooter =
+    !pathname.startsWith('/owner') && !pathname.startsWith('/admin') && pathname !== '/privacy';
   return (
     <>
       <Routes>
@@ -18,6 +21,8 @@ export function App() {
         <Route path="/s/:slug" element={<ShopPage />} />
         <Route path="/s/:slug/order/:token" element={<OrderPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/apply" element={<ApplyPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/owner" element={<OwnerHome />} />
         <Route path="/owner/:shopId" element={<QueuePage />} />
         <Route

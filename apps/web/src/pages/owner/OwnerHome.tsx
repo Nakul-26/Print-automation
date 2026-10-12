@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { ShopSummary } from '@print/contracts';
+import { SignInForm } from '../../components/SignInForm';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { ApiError } from '../../lib/api';
 import { isUnauthenticated, ownerApi } from '../../lib/owner-api';
@@ -56,7 +57,7 @@ export function OwnerHome() {
   if (state.kind === 'signed-out') {
     return (
       <Shell>
-        <SignIn onDone={() => void load()} />
+        <SignInForm title="Shop sign-in" onDone={() => void load()} />
       </Shell>
     );
   }
@@ -81,7 +82,7 @@ export function OwnerHome() {
                 >
                   {shop.name}
                   <span className="ml-2 font-mono text-xs font-normal uppercase text-muted">
-                    {shop.role}
+                    {shop.status === 'pending_approval' ? 'waiting for approval' : shop.role}
                   </span>
                 </Link>
               )}
@@ -89,67 +90,21 @@ export function OwnerHome() {
           ))}
         </ul>
       )}
+      <p className="mt-6 text-sm text-muted">
+        Opening a new shop?{' '}
+        <Link to="/apply" className="font-medium text-cyan underline">
+          Apply here
+        </Link>
+        .
+      </p>
       <Button
         variant="ghost"
-        className="mt-6"
+        className="mt-2"
         onClick={() => void ownerApi.logout().then(() => setState({ kind: 'signed-out' }))}
       >
         Sign out
       </Button>
     </Shell>
-  );
-}
-
-function SignIn({ onDone }: { onDone: () => void }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await ownerApi.login(email, password);
-      onDone();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not sign in. Try again.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form onSubmit={(e) => void submit(e)} className="space-y-4">
-      <h1 className="display text-3xl">Shop sign-in</h1>
-      <label className="block">
-        <span className="text-sm font-medium">Email</span>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="username"
-          required
-          className="mt-1.5 min-h-12 w-full rounded-xl border border-line bg-white px-4 text-base"
-        />
-      </label>
-      <label className="block">
-        <span className="text-sm font-medium">Password</span>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          required
-          className="mt-1.5 min-h-12 w-full rounded-xl border border-line bg-white px-4 text-base"
-        />
-      </label>
-      {error && <Notice tone="error">{error}</Notice>}
-      <Button type="submit" className="w-full" disabled={busy || !email || !password}>
-        {busy ? 'Signing in…' : 'Sign in'}
-      </Button>
-    </form>
   );
 }
 

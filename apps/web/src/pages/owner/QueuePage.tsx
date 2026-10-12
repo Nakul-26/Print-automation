@@ -10,6 +10,7 @@ import {
 import { FileDialog } from '../../components/owner/FileDialog';
 import { OrderCard } from '../../components/owner/OrderCard';
 import { PrintingPanel } from '../../components/owner/PrintingPanel';
+import { RatesPanel } from '../../components/owner/RatesPanel';
 import { QrPanel } from '../../components/owner/QrPanel';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { ApiError } from '../../lib/api';
@@ -35,6 +36,7 @@ export function QueuePage() {
   const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [showPrinting, setShowPrinting] = useState(false);
+  const [showRates, setShowRates] = useState(false);
   const [printing, setPrinting] = useState<PrintingStatus | null>(null);
   const [sound, setSound] = useState(soundEnabled);
   const [, setTick] = useState(0);
@@ -209,6 +211,13 @@ export function QueuePage() {
             <Button
               variant="secondary"
               className="min-h-10 px-4 text-sm"
+              onClick={() => setShowRates(true)}
+            >
+              Prices
+            </Button>
+            <Button
+              variant="secondary"
+              className="min-h-10 px-4 text-sm"
               onClick={toggleSound}
               aria-pressed={sound}
             >
@@ -224,6 +233,14 @@ export function QueuePage() {
           </div>
         </header>
 
+        {shop?.status === 'pending_approval' && (
+          <div className="mb-4">
+            <Notice>
+              Your shop is waiting for approval. You can already set your prices and connect your
+              printers. Students can use your QR code once it is approved.
+            </Notice>
+          </div>
+        )}
         {loadError && <Notice tone="error">{loadError}</Notice>}
         {!orders && !loadError && <Spinner label="Loading the queue" />}
 
@@ -278,6 +295,13 @@ export function QueuePage() {
 
       {preview && (
         <FileDialog url={preview.url} title={preview.title} onClose={() => setPreview(null)} />
+      )}
+      {showRates && shop && (
+        <RatesPanel
+          shopId={shopId}
+          canEdit={shop.role === 'owner'}
+          onClose={() => setShowRates(false)}
+        />
       )}
       {showPrinting && shop && (
         <PrintingPanel

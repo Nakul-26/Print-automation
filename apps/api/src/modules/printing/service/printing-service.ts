@@ -62,6 +62,8 @@ export interface PrintingServiceDeps {
   logger: Logger;
   orders: () => OrdersPort;
   findShopName: (shopId: string) => Promise<string | null>;
+  /** True when the shop is suspended: its printing apps are then refused. */
+  isShopSuspended: (shopId: string) => Promise<boolean>;
   tokenSecret: string;
   /** A job the agent took but never finished is failed after this long. */
   staleJobMinutes: number;
@@ -308,7 +310,8 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     /** Socket and HTTP authentication: the device behind a token, or null. */
     async authenticate(token: string): Promise<{ deviceId: string; shopId: string } | null> {
       const device = await repo.findDeviceByTokenHash(hash(`device:${token}`));
-      return device ? { deviceId: device.id, shopId: device.shopId } : null;
+      if (!device || (await deps.isShopSuspended(device.shopId))) return null;
+      return { deviceId: device.id, shopId: device.shopId };
     },
 
     async removeAgent(tenant: { shopId: string; userId: string }, deviceId: string) {

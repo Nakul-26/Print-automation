@@ -59,6 +59,8 @@ export function createApp({ env, logger, readinessChecks, container }: AppDeps):
   );
   v1.use(container.identity.authenticate);
   v1.use('/auth', container.identity.router);
+  v1.use('/applications', container.admin.applyRouter);
+  v1.use('/admin', container.admin.adminRouter);
   v1.use('/owner/shops', container.shops.ownerRouter);
   v1.use('/owner/shops', container.pricing.ownerRouter);
   v1.use('/owner/shops', container.orders.ownerRouter);

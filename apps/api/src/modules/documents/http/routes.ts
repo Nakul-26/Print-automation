@@ -15,6 +15,8 @@ import { toView, type UploadService } from '../service/upload-service.js';
 export interface PublicShop {
   id: string;
   status: 'pending_approval' | 'active' | 'suspended';
+  storageQuotaBytes: number | null;
+  flags: { officeFiles: boolean };
 }
 
 /** Public, token-based routes used by students. No account is required. */
@@ -100,6 +102,10 @@ export function createUploadsRouter(deps: {
             tempPath: file.path,
             originalName: file.originalname,
             sizeBytes: file.size,
+            limits: {
+              storageQuotaBytes: shop.storageQuotaBytes,
+              officeFiles: shop.flags.officeFiles,
+            },
           });
           const body: CreateUploadResponse = {
             token: created.token,

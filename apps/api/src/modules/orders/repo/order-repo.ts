@@ -263,6 +263,20 @@ export function createOrderRepo(db: Db) {
       return rows as unknown as OrderRecord[];
     },
 
+    /** Order counts per shop for the admin's usage view ("open" = still needs the shop's attention). */
+    async countsByShop(): Promise<Map<string, { open: number; total: number }>> {
+      const rows = await db.order.groupBy({ by: ['shopId', 'status'], _count: { _all: true } });
+      const open = new Set(['pending', 'accepted', 'printing']);
+      const result = new Map<string, { open: number; total: number }>();
+      for (const row of rows) {
+        const entry = result.get(row.shopId) ?? { open: 0, total: 0 };
+        entry.total += row._count._all;
+        if (open.has(row.status)) entry.open += row._count._all;
+        result.set(row.shopId, entry);
+      }
+      return result;
+    },
+
     /** Print-file bytes per order, for storage accounting. */
     async printFileUsage(): Promise<PrintFileUsage[]> {
       const rows = await db.order.findMany({

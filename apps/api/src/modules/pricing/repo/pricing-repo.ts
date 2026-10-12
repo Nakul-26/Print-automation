@@ -24,6 +24,12 @@ export function createPricingRepo(db: Db) {
       };
     },
 
+    /** Ids of shops that have at least one rate. */
+    async shopsWithRates(): Promise<Set<string>> {
+      const rows = await db.shopRate.findMany({ select: { shopId: true }, distinct: ['shopId'] });
+      return new Set(rows.map((r) => r.shopId));
+    },
+
     /** Replaces all of a shop's rates in one transaction. */
     async replaceRates(shopId: string, body: RatesBody): Promise<void> {
       await db.$transaction([

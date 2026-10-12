@@ -37,6 +37,8 @@ export interface AgentGateway {
   isOnline(deviceId: string): Promise<boolean>;
   /** Drops the device's connection (when it is removed from the shop). */
   disconnect(deviceId: string): void;
+  /** Drops every device of a shop (when the shop is suspended). */
+  disconnectShop(shopId: string): void;
 }
 
 /**
@@ -50,6 +52,8 @@ export interface Realtime {
   emit(room: string, event: string, payload?: unknown): void;
   /** Drops every connection of a user (on sign-out), so access ends with the session. */
   disconnectUser(userId: string): void;
+  /** Drops every connection in a room, on any web process (when a shop is suspended). */
+  disconnectRoom(room: string): void;
   /** Starts accepting connections on an existing HTTP server. Until then `emit` does nothing. */
   attach(server: HttpServer): void;
   /**
@@ -77,6 +81,7 @@ export function createRealtime(deps: {
   const agentConnectCallbacks: ((agent: AgentClient) => void | Promise<void>)[] = [];
   const agentDisconnectCallbacks: ((agent: AgentClient) => void | Promise<void>)[] = [];
   const agentRoom = (deviceId: string): string => `agent:${deviceId}`;
+  const agentShopRoom = (shopId: string): string => `agent-shop:${shopId}`;
   const logSafely = (what: string) => (err: unknown) =>
     deps.logger.error({ err }, `agent ${what} callback failed`);
   const agents: AgentGateway = {
@@ -88,6 +93,8 @@ export function createRealtime(deps: {
     isOnline: async (deviceId) =>
       io ? (await io.of('/agent').in(agentRoom(deviceId)).fetchSockets()).length > 0 : false,
     disconnect: (deviceId) => void io?.of('/agent').in(agentRoom(deviceId)).disconnectSockets(true),
+    disconnectShop: (shopId) =>
+      void io?.of('/agent').in(agentShopRoom(shopId)).disconnectSockets(true),
   };
   let io: Server | null = null;
   let emitterOnly = false;
@@ -107,6 +114,10 @@ export function createRealtime(deps: {
       for (const socket of io.sockets.sockets.values()) {
         if (socket.data['userId'] === userId) socket.disconnect(true);
       }
+    },
+
+    disconnectRoom(room) {
+      io?.in(room).disconnectSockets(true);
     },
 
     attachEmitterOnly() {
@@ -164,7 +175,7 @@ export function createRealtime(deps: {
             for (const other of others) if (other.id !== socket.id) other.disconnect(true);
           })
           .catch(logSafely('replace'))
-          .then(() => socket.join(agentRoom(agent.deviceId)))
+          .then(() => socket.join([agentRoom(agent.deviceId), agentShopRoom(agent.shopId)]))
           .then(() => Promise.all(agentConnectCallbacks.map((cb) => cb(agent))))
           .catch(logSafely('connect'));
         for (const [event, handler] of agentHandlers) {

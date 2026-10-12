@@ -60,7 +60,7 @@ describe('quota eviction rules', () => {
     const service = createRetentionService({
       documents,
       orders,
-      audit: { record: async () => undefined },
+      audit: { record: async () => undefined, recent: async () => [] },
       logger: createLogger('silent'),
       maxBytes: () => opts.max,
       highWatermark: 0.9,

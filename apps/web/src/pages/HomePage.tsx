@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Button } from '../components/ui';
 
 /** Where someone lands without a shop link. Most people arrive by scanning the shop's QR code instead. */
@@ -40,6 +40,12 @@ export function HomePage() {
       </form>
       <p className="mt-6 text-sm text-muted">
         Tip: scanning the QR code at the shop opens it directly.
+      </p>
+      <p className="mt-2 text-sm text-muted">
+        Run a print shop?{' '}
+        <Link to="/apply" className="font-medium text-cyan underline">
+          Apply to join
+        </Link>
       </p>
     </main>
   );

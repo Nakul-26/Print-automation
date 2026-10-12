@@ -66,7 +66,7 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
 
 export async function resetDatabase(db: Db): Promise<void> {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE audit_log, order_items, orders, order_counters, uploads, shop_rates, shop_pricing, sessions, shop_members, shops, users RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE platform_settings, audit_log, order_items, orders, order_counters, uploads, shop_rates, shop_pricing, sessions, shop_members, shops, users RESTART IDENTITY CASCADE',
   );
 }
 

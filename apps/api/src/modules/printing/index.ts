@@ -34,6 +34,7 @@ export function createPrinting(deps: {
   /** Supplied by the composition root; resolved lazily because orders is built after printing. */
   orders: () => OrdersPort;
   findShopName: (shopId: string) => Promise<string | null>;
+  isShopSuspended: (shopId: string) => Promise<boolean>;
 }) {
   const repo = createPrintingRepo(deps.db);
   const service = createPrintingService({
@@ -44,6 +45,7 @@ export function createPrinting(deps: {
     logger: deps.logger,
     orders: deps.orders,
     findShopName: deps.findShopName,
+    isShopSuspended: deps.isShopSuspended,
     tokenSecret: deps.env.SESSION_SECRET,
     staleJobMinutes: deps.env.PRINT_JOB_STALE_MINUTES,
   });
@@ -68,6 +70,7 @@ export function createPrinting(deps: {
       retryOrder: service.retryOrder,
       cancelOrder: service.cancelOrder,
       statesFor: service.statesFor,
+      shopsWithPrintingApp: () => repo.shopsWithDevice(),
     },
     authenticateAgent: service.authenticate,
     sweep: service.sweep,

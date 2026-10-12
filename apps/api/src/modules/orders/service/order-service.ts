@@ -457,6 +457,7 @@ export function createOrderService(deps: OrderServiceDeps) {
 
     /** Storage accounting for the print files the orders module holds. */
     printFileUsage: () => repo.printFileUsage(),
+    countsByShop: () => repo.countsByShop(),
 
     /** Storage pressure: deletes the print files of these orders; open ones expire. */
     async evictFiles(orderIds: string[], reason: string) {

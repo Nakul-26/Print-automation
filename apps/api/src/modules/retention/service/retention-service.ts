@@ -25,7 +25,7 @@ export interface RetentionDeps {
   orders: OrdersPort;
   audit: Audit;
   logger: Logger;
-  maxBytes: () => number;
+  maxBytes: () => Promise<number> | number;
   highWatermark: number;
   lowWatermark: number;
   stuckProcessingMinutes: number;
@@ -66,7 +66,7 @@ export function createRetentionService(deps: RetentionDeps) {
    * may still be printed; within each group the oldest go first.
    */
   async function enforceQuota(): Promise<{ orders: number; uploads: number; bytes: number }> {
-    const max = deps.maxBytes();
+    const max = await deps.maxBytes();
     const [uploads, printFiles] = await Promise.all([
       deps.documents.storedUploads(),
       deps.orders.printFileUsage(),
