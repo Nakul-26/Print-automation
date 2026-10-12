@@ -345,9 +345,10 @@ Admin panel, shop applications and approval flow, per-shop feature flags, storag
 Exit: a new shop can apply, get approved, set rates and printers, and start receiving orders without developer help; changing the storage limit takes effect without a redeploy.
 Done: public apply page, owner Prices panel, admin panel (approve/suspend/reactivate, per-shop storage cap and Office switch, live platform storage limit, activity log), immediate suspension cut-off of dashboards and printing apps (ADR 0011). Not done: email notifications, staff invitations.
 
-**Phase 9: Deployment and pilot (1-2 weeks + pilot time)**
+**Phase 9: Deployment and pilot (1-2 weeks + pilot time) — build done; deploy and pilot pending**
 Production Dockerfiles and compose, Dokploy setup (domains, HTTPS, volumes, healthchecks, secrets), least-privilege DB user, automated off-server encrypted DB backups with a **restore test**, restart/redeploy test, staging environment. Pilot with one shop for 2 weeks.
 Exit: the shop runs daily operations on it; feedback list captured.
+Done (in the repo, verified on the production images locally): least-privilege DB role, encrypted R2 backup sidecar with restore verification, restore drill and full disaster rebuild, crash/restart recovery, real-client-IP and nginx re-resolve fixes, staging definition, load-test tool, deployment guide, runbook and pilot checklist (ADR 0012, docs/deployment.md, runbook.md, load-testing.md, pilot.md). Pending on the real server: create the R2 bucket and keys, deploy, restore drill with the real key, load test on the server, real-printer checks, the two-week pilot.
 
 **Phase 10: Pilot fixes (1-2 weeks)**
 Fix usability issues, tune limits and conversion defaults, measure time saved.

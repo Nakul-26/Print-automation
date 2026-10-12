@@ -30,6 +30,12 @@ describe('loadApiEnv', () => {
     });
     expect(() => loadApiEnv({ ...valid, WORKER_CONCURRENCY: '0' })).toThrow(/WORKER_CONCURRENCY/);
   });
+  it('treats empty optional settings (as Docker Compose passes them) as not set', () => {
+    const env = loadApiEnv({ ...valid, TURNSTILE_SITE_KEY: '', TURNSTILE_SECRET_KEY: '' });
+    expect(env.TURNSTILE_SITE_KEY).toBeUndefined();
+    expect(env.TURNSTILE_SECRET_KEY).toBeUndefined();
+  });
+
   it('fails with a readable message on bad config', () => {
     expect(() => loadApiEnv({ ...valid, SESSION_SECRET: 'short' })).toThrow(/SESSION_SECRET/);
   });

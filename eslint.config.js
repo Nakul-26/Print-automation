@@ -10,6 +10,7 @@ export default tseslint.config(
       'apps/agent/scripts/**',
       'apps/agent/release/**',
       'apps/agent/vendor/**',
+      'apps/api/scripts/**',
     ],
   },
   js.configs.recommended,

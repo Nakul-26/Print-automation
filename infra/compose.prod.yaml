@@ -1,27 +1,49 @@
-# Production stack for Dokploy (or any Docker host): web (nginx) + api + postgres.
+# Production stack for Dokploy (or any Docker host): web (nginx) + api + worker + postgres + backup.
 #
 # Dokploy: create a "Compose" application from this repository, set the compose path to
 # infra/compose.prod.yaml, fill in the environment variables from infra/.env.production.example,
-# and attach your domain to the `web` service on port 80 (Dokploy's proxy provides HTTPS).
-# Do not publish PostgreSQL's port.
+# and attach your domain to the `web` service on port 80. Do not publish PostgreSQL's port.
+# Full steps: docs/deployment.md.
 
 name: print-platform
+
+# Docker keeps every log line forever by default and can fill the disk; keep a few MB per service.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
 
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-print}
+      # The superuser: used only to create the app's role (first start) and by the backup checks.
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-print}
+      # The password of `print_app`, the role the application connects as (see postgres/init-app-role.sh).
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    command:
+      [
+        'postgres',
+        '-c',
+        'max_connections=100',
+        '-c',
+        'shared_buffers=512MB',
+        '-c',
+        'log_min_duration_statement=1000',
+      ]
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d print']
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
 
   # Web + API only. Heavy document work happens in `worker`, so page loads stay quick.
   api: &api
@@ -29,6 +51,7 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.api
     restart: unless-stopped
+    logging: *logging
     init: true
     depends_on:
       postgres:
@@ -36,13 +59,19 @@ services:
     environment: &api-env
       NODE_ENV: production
       APP_ROLE: api
-      DATABASE_URL: postgresql://${POSTGRES_USER:-print}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-print}
+      DATABASE_URL: postgresql://print_app:${APP_DB_PASSWORD}@postgres:5432/print
       APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN, e.g. https://print.example.com}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (32+ random characters)}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       STORAGE_MAX_BYTES: ${STORAGE_MAX_BYTES:-5368709120}
       RETENTION_HOURS: ${RETENTION_HOURS:-24}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      # Cloudflare Turnstile (bot check on orders and shop applications). Leave empty to turn off.
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Per-visitor limits; raise them on STAGING only while running a load test (docs/load-testing.md).
+      UPLOAD_RATE_LIMIT_MAX: ${UPLOAD_RATE_LIMIT_MAX:-}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-}
       # Leave unset to size from the container's CPU and memory (recommended).
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
       OFFICE_CONCURRENCY: ${OFFICE_CONCURRENCY:-}
@@ -80,11 +109,47 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.web
+      args:
+        # Where the shop dashboard sends owners to get the printing app (leave empty to hide).
+        VITE_AGENT_STORE_URL: ${VITE_AGENT_STORE_URL:-}
+        VITE_AGENT_DOWNLOAD_URL: ${VITE_AGENT_DOWNLOAD_URL:-}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       api:
         condition: service_healthy
 
+  # Nightly encrypted database backups to Cloudflare R2 (or any S3-compatible bucket). Every backup
+  # is restored into a scratch database and checked before it is uploaded. See docs/runbook.md.
+  backup:
+    build:
+      context: ./backup
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TZ: ${BACKUP_TZ:-Asia/Kolkata}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AGE_RECIPIENT: ${BACKUP_AGE_PUBLIC_KEY:?set BACKUP_AGE_PUBLIC_KEY (see docs/runbook.md)}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:?set BACKUP_REMOTE, e.g. r2:my-bucket/prod}
+      BACKUP_AT: ${BACKUP_AT:-02:30}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_PING_URL: ${BACKUP_PING_URL:-}
+      # rclone reads its remote "r2" from these (no config file to lose).
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_R2_ENDPOINT: ${R2_ENDPOINT:-}
+      RCLONE_CONFIG_R2_ACL: private
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: 'true'
+    volumes:
+      - backups:/backups
+
 volumes:
   pgdata:
   files:
+  backups:

@@ -92,7 +92,9 @@ export type ApiEnv = z.infer<typeof ApiEnvSchema>;
 
 /** The only place in the codebase allowed to read process.env. */
 export function loadApiEnv(source: NodeJS.ProcessEnv = process.env): ApiEnv {
-  const parsed = ApiEnvSchema.safeParse(source);
+  // Docker Compose passes unset optional variables as empty strings; treat those as "not set".
+  const present = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ''));
+  const parsed = ApiEnvSchema.safeParse(present);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
     throw new Error(`Invalid environment configuration:\n${issues.join('\n')}`);

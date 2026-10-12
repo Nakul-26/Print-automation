@@ -9,6 +9,10 @@ WORKDIR /repo
 COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
+# The dashboard's printing-app links are baked into the build.
+ARG VITE_AGENT_STORE_URL=
+ARG VITE_AGENT_DOWNLOAD_URL=
+ENV VITE_AGENT_STORE_URL=$VITE_AGENT_STORE_URL VITE_AGENT_DOWNLOAD_URL=$VITE_AGENT_DOWNLOAD_URL
 RUN pnpm --filter @print/web build
 
 # ---- serve it, and proxy the API and WebSockets to the api service ----
