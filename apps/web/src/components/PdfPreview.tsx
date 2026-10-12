@@ -54,7 +54,9 @@ export function PdfPreview({ url, revision }: { url: string; revision: number })
       const natural = pdfPage.getViewport({ scale: 1 });
       const width = wrapRef.current?.clientWidth ?? 320;
       const scale = width / natural.width;
-      const ratio = window.devicePixelRatio || 1;
+      // Draw at no less than twice the size and let the browser scale down: hairline rules (a
+      // 0.5 pt page border becomes a fraction of a pixel) otherwise vanish in the preview.
+      const ratio = Math.max(window.devicePixelRatio || 1, 2);
       const viewport = pdfPage.getViewport({ scale: scale * ratio });
       const canvas = canvasRef.current;
       if (!canvas) return;
