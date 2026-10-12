@@ -15,7 +15,10 @@ import {
   makePdf,
   makePng,
   makeRotatedJpeg,
+  inkBounds,
+  makeFramedPdf,
   pdfInfo,
+  renderPng,
   renderMeans,
 } from './fixtures.js';
 
@@ -152,6 +155,40 @@ describe('buildPrintPdf', () => {
     const out = await conversion.buildPrintPdf({ ...base, source, pagesPerSheet: 2 });
     const [r, , b] = await renderMeans(out);
     expect(Math.abs(r - b)).toBeGreaterThan(2);
+  });
+
+  gsIt('never clips the edges of pages placed 2-up or 4-up', async () => {
+    const margin = 5; // px at 40 dpi, a little less than the 14pt sheet margin
+    const check = async (out: Buffer, w: number, h: number) => {
+      const b = await inkBounds(await renderPng(out));
+      expect(b.width).toBe(w);
+      expect(b.height).toBe(h);
+      expect(b.x0).toBeGreaterThanOrEqual(margin);
+      expect(b.y0).toBeGreaterThanOrEqual(margin);
+      expect(b.x1).toBeLessThanOrEqual(b.width - 1 - margin);
+      expect(b.y1).toBeLessThanOrEqual(b.height - 1 - margin);
+      // ...and the frames are really drawn near the sheet edges (content not shrunk away).
+      expect(b.y1 - b.y0).toBeGreaterThan(h * 0.8);
+      expect(b.x1 - b.x0).toBeGreaterThan(w * 0.8);
+    };
+    const portrait = await makeFramedPdf(4);
+    await check(
+      await conversion.buildPrintPdf({ ...base, source: portrait, pagesPerSheet: 2 }),
+      468,
+      331,
+    );
+    await check(
+      await conversion.buildPrintPdf({ ...base, source: portrait, pagesPerSheet: 4 }),
+      331,
+      468,
+    );
+    // Landscape pages stack on a portrait sheet.
+    const landscape = await makeFramedPdf(2, [842, 595]);
+    await check(
+      await conversion.buildPrintPdf({ ...base, source: landscape, pagesPerSheet: 2 }),
+      331,
+      468,
+    );
   });
 
   gsIt('lays portrait pages 2-up on landscape sheets', async () => {

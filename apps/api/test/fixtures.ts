@@ -47,10 +47,10 @@ export async function makeEncryptedPdf(): Promise<Buffer> {
 export const CORRUPT_PDF = Buffer.from('%PDF-1.4\nthis is not really a pdf \x00\x01\x02 garbage');
 export const FAKE_EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200, 1)]);
 
-/** Mean R/G/B of page 1 rendered at low resolution. Equal means are the signature of gray. */
-export async function renderMeans(pdf: Buffer, page = 1): Promise<[number, number, number]> {
+/** A page rendered to PNG at low resolution. */
+export async function renderPng(pdf: Buffer, page = 1): Promise<Buffer> {
   const [bin, ...prefix] = GS_COMMAND.split(/\s+/);
-  const png = await new Promise<Buffer>((resolve, reject) => {
+  return new Promise<Buffer>((resolve, reject) => {
     const child = spawn(
       bin!,
       [
@@ -76,6 +76,11 @@ export async function renderMeans(pdf: Buffer, page = 1): Promise<[number, numbe
     );
     child.stdin.end(pdf);
   });
+}
+
+/** Mean R/G/B of a page rendered at low resolution. Equal means are the signature of gray. */
+export async function renderMeans(pdf: Buffer, page = 1): Promise<[number, number, number]> {
+  const png = await renderPng(pdf, page);
   const { channels } = await sharp(png).stats();
   return [channels[0]!.mean, channels[1]!.mean, channels[2]!.mean];
 }
@@ -166,4 +171,46 @@ export async function officeAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Pages whose only content is a thick black frame on the very edge, so any clipping shows up. */
+export async function makeFramedPdf(
+  pages: number,
+  size: [number, number] = [595, 842],
+): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  const [w, h] = size;
+  for (let i = 0; i < pages; i++) {
+    const page = doc.addPage([w, h]);
+    const t = 10;
+    for (const [x, y, rw, rh] of [
+      [0, 0, w, t],
+      [0, h - t, w, t],
+      [0, 0, t, h],
+      [w - t, 0, t, h],
+    ] as const) {
+      page.drawRectangle({ x, y, width: rw, height: rh, color: rgb(0, 0, 0) });
+    }
+  }
+  return Buffer.from(await doc.save());
+}
+
+/** Bounding box (in pixels) of everything darker than light gray, plus the image size. */
+export async function inkBounds(png: Buffer) {
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  let x0 = info.width;
+  let y0 = info.height;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      if (data[(y * info.width + x) * info.channels]! < 128) {
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        y0 = Math.min(y0, y);
+        y1 = Math.max(y1, y);
+      }
+    }
+  }
+  return { x0, y0, x1, y1, width: info.width, height: info.height };
 }

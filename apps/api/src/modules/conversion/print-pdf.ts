@@ -1,7 +1,7 @@
 import type { ColorMode, PaperSize } from '@print/contracts';
 import { ProcessingError } from './errors.js';
 import { GRAYSCALE_ARGS, runGhostscript, type GhostscriptOptions } from './ghostscript.js';
-import { inspectPdf, selectPages } from './pdf.js';
+import { inspectPdf, layoutNup, selectPages } from './pdf.js';
 
 export interface PrintPdfRequest {
   /** The normalised PDF produced when the document was uploaded. */
@@ -21,7 +21,8 @@ const PAPER_POINTS: Record<PaperSize, { w: number; h: number }> = {
 interface Layout {
   sheetW: number;
   sheetH: number;
-  grid: string; // "columns x rows"
+  cols: number;
+  rows: number;
 }
 
 /**
@@ -32,12 +33,14 @@ interface Layout {
 function nupLayout(paper: PaperSize, perSheet: 2 | 4, landscapePages: boolean): Layout {
   const { w, h } = PAPER_POINTS[paper];
   const landscapeSheet = perSheet === 2 ? !landscapePages : landscapePages;
-  const grid = perSheet === 4 ? '2x2' : landscapePages ? '1x2' : '2x1';
-  return landscapeSheet ? { sheetW: h, sheetH: w, grid } : { sheetW: w, sheetH: h, grid };
+  const [cols, rows] = perSheet === 4 ? [2, 2] : landscapePages ? [1, 2] : [2, 1];
+  return landscapeSheet
+    ? { sheetW: h, sheetH: w, cols, rows }
+    : { sheetW: w, sheetH: h, cols, rows };
 }
 
 /**
- * Produces the exact PDF that gets printed: selected pages only, laid out N-up, and truly
+ * Produces the exact PDF that gets printed: selected pages only, laid out N-up (by us, so layout is predictable), and truly
  * grayscale for black-and-white jobs. Copies and duplex are left to the printer/agent.
  */
 export async function buildPrintPdf(
@@ -48,23 +51,16 @@ export async function buildPrintPdf(
   let bytes = request.source;
   if (request.pages) bytes = await selectPages(bytes, request.pages);
 
-  const needsGhostscript = request.colorMode === 'black_white' || request.pagesPerSheet > 1;
-  if (!needsGhostscript) return bytes;
-
-  const args: string[] = [];
-  if (request.colorMode === 'black_white') args.push(...GRAYSCALE_ARGS);
   if (request.pagesPerSheet !== 1) {
     const info = await inspectPdf(bytes, maxPages);
-    const layout = nupLayout(request.paperSize, request.pagesPerSheet, info.mostlyLandscape);
-    args.push(
-      `-sNupControl=${layout.grid}`,
-      '-dFIXEDMEDIA',
-      `-dDEVICEWIDTHPOINTS=${layout.sheetW}`,
-      `-dDEVICEHEIGHTPOINTS=${layout.sheetH}`,
+    bytes = await layoutNup(
+      bytes,
+      nupLayout(request.paperSize, request.pagesPerSheet, info.mostlyLandscape),
     );
   }
+  if (request.colorMode !== 'black_white') return bytes;
 
-  const { output } = await runGhostscript(gs, args, bytes);
+  const { output } = await runGhostscript(gs, [...GRAYSCALE_ARGS], bytes);
   if (!output.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
     throw new ProcessingError('processing_failed', 'Could not prepare this document for printing');
   }
