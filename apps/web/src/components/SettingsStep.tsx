@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import type { EstimateItem, PrintSettingsInput, PublicShopInfo } from '@print/contracts';
-import { api } from '../lib/api';
 import type { DraftItem } from '../lib/draft';
 import { COLOR_LABEL, formatRupees, offered, SIDES_LABEL } from '../lib/format';
 import { ConversionSettings } from './ConversionSettings';
-import { PdfPreview } from './PdfPreview';
+import { PrintPreview } from './PrintPreview';
 import { Button, Card, Notice, Segmented, Spinner } from './ui';
 
 type Settings = PrintSettingsInput;
@@ -78,7 +77,13 @@ function ItemCard({
                 <Spinner label="Updating preview" />
               </div>
             ) : (
-              <PdfPreview url={api.previewUrl(item.token)} revision={upload?.revision ?? 0} />
+              <PrintPreview
+                slug={shop.slug}
+                token={item.token}
+                settings={s}
+                revision={upload?.revision ?? 0}
+                sheets={estimate?.sheets}
+              />
             )}
           </div>
         )}

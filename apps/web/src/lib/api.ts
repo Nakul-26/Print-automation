@@ -1,4 +1,6 @@
 import type { z } from 'zod';
+import type {
+  OrderItemInput} from '@print/contracts';
 import {
   CreateOrderResponse,
   CreateUploadResponse,
@@ -82,6 +84,28 @@ export const api = {
     }),
 
   getOrder: (token: string) => request(OrderView, `/orders/${token}`),
+
+  /** The exact PDF the shop would print for these settings. */
+  printPreview: async (
+    slug: string,
+    body: z.input<typeof OrderItemInput>,
+    signal?: AbortSignal,
+  ) => {
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/shops/${encodeURIComponent(slug)}/print-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      throw new ApiError(0, 'network', 'No connection. Check your internet and try again.');
+    }
+    if (!res.ok) throw await readError(res);
+    return res.blob();
+  },
 
   previewUrl: (token: string) => `${BASE}/uploads/${token}/preview`,
 };

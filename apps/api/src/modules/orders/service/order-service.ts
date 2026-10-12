@@ -278,6 +278,33 @@ export function createOrderService(deps: OrderServiceDeps) {
       };
     },
 
+    /**
+     * The exact PDF that would be printed for these settings (selected pages, pages per sheet,
+     * grayscale), so the student sees what the shop will print. Nothing is stored.
+     */
+    async previewPrint(slug: string, input: OrderItemInput): Promise<Buffer> {
+      const shop = await activeShop(slug);
+      const upload = await deps.uploads.findUsableForShop(input.uploadToken, shop.id);
+      const { settings } = input;
+
+      let pages: number[] | undefined;
+      if (settings.pageSelection === 'custom') {
+        const parsed = parsePageRanges(settings.pages ?? '', upload.pageCount);
+        if (!parsed.ok) {
+          throw new HttpError(400, `${upload.originalName}: ${parsed.error}`, 'invalid_pages');
+        }
+        pages = parsed.pages.length === upload.pageCount ? undefined : parsed.pages;
+      }
+      const source = await deps.uploads.readNormalized(upload.normalizedKey);
+      return conversion.buildPrintPdf({
+        source,
+        ...(pages ? { pages } : {}),
+        colorMode: settings.colorMode,
+        pagesPerSheet: settings.pagesPerSheet,
+        paperSize: settings.paperSize,
+      });
+    },
+
     async create(
       slug: string,
       request: CreateOrderRequest,

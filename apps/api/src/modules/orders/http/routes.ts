@@ -1,6 +1,11 @@
 import { Router, type Request } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { CreateOrderRequest, EstimateRequest, ORDER_LOOKUP_TOKEN_PATTERN } from '@print/contracts';
+import {
+  CreateOrderRequest,
+  EstimateRequest,
+  ORDER_LOOKUP_TOKEN_PATTERN,
+  OrderItemInput,
+} from '@print/contracts';
 import { HttpError } from '../../../platform/http/error-handler.js';
 import type { OrderService } from '../service/order-service.js';
 
@@ -35,6 +40,22 @@ export function createOrdersRouter(deps: {
       const body = EstimateRequest.parse(req.body);
       res.set('Cache-Control', 'no-store');
       res.json(await deps.orders.estimate(slugOf(req), body));
+    },
+  );
+
+  router.post(
+    '/shops/:slug/print-preview',
+    limiter(deps.estimateRateLimitMax, 'Too many requests, please wait a moment'),
+    async (req, res) => {
+      const body = OrderItemInput.parse(req.body);
+      const pdf = await deps.orders.previewPrint(slugOf(req), body);
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline; filename="print-preview.pdf"',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.send(pdf);
     },
   );
 

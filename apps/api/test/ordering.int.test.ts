@@ -614,3 +614,51 @@ describe('owner rate card', () => {
     expect(put.status).toBe(403);
   });
 });
+
+describe('print preview', () => {
+  const preview = (token: string, settings: object, slug = SLUG) =>
+    request(ctx.app)
+      .post(`/api/v1/shops/${slug}/print-preview`)
+      .send({ uploadToken: token, settings: { ...defaults, ...settings } })
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+  gsIt('shows only the chosen pages, laid out as the shop will print them', async () => {
+    await seedShop(ctx, 'Alpha Prints', SLUG);
+    const token = await uploadPdf(ctx, 8);
+
+    const all = await preview(token, {});
+    expect(all.status).toBe(200);
+    expect(all.headers['content-type']).toBe('application/pdf');
+    expect((await pdfInfo(all.body as Buffer)).count).toBe(8);
+
+    const some = await preview(token, { pageSelection: 'custom', pages: '2-4, 7' });
+    expect((await pdfInfo(some.body as Buffer)).count).toBe(4);
+
+    const nup = await preview(token, { pagesPerSheet: 4 });
+    expect((await pdfInfo(nup.body as Buffer)).count).toBe(2);
+  });
+
+  gsIt('renders black and white as true grayscale', async () => {
+    await seedShop(ctx, 'Alpha Prints', SLUG);
+    const token = await uploadPdf(ctx, 1);
+    const res = await preview(token, { colorMode: 'black_white' });
+    const [r, g, b] = await renderMeans(res.body as Buffer);
+    expect(Math.abs(r - g)).toBeLessThan(1);
+    expect(Math.abs(g - b)).toBeLessThan(1);
+  });
+
+  gsIt('refuses bad page ranges and uploads from another shop', async () => {
+    await seedShop(ctx, 'Alpha Prints', SLUG);
+    await seedShop(ctx, 'Beta Prints', 'beta-prints');
+    const token = await uploadPdf(ctx, 3);
+
+    expect((await preview(token, { pageSelection: 'custom', pages: '9' })).status).toBe(400);
+    expect((await preview(token, {}, 'beta-prints')).status).toBe(404);
+    expect((await preview('x'.repeat(40), {})).status).toBeGreaterThanOrEqual(400);
+  });
+});
