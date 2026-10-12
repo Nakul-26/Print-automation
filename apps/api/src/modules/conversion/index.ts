@@ -74,6 +74,11 @@ export function createConversion(options: ConversionOptions) {
       return { pdf, pageCount: info.pageCount };
     },
 
+    /** True when the pages are mostly wider than tall; decides which edge two-sided jobs flip on. */
+    async isLandscape(pdf: Buffer): Promise<boolean> {
+      return (await inspectPdf(pdf, Number.MAX_SAFE_INTEGER)).mostlyLandscape;
+    },
+
     async countPages(pdf: Buffer): Promise<number> {
       return (await inspectPdf(pdf, Number.MAX_SAFE_INTEGER)).pageCount;
     },

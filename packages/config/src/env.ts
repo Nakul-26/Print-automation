@@ -36,6 +36,10 @@ export const ApiEnvSchema = z.object({
   STUCK_PROCESSING_MINUTES: z.coerce.number().positive().default(15),
   /** Requests per IP per 15 minutes across the whole API, on top of the per-endpoint limits. */
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(6000),
+  /** A print job the agent took but did not finish is failed after this long. */
+  PRINT_JOB_STALE_MINUTES: z.coerce.number().positive().default(5),
+  /** Wrong pairing codes allowed per IP per 15 minutes. */
+  PAIRING_FAILURES_MAX: z.coerce.number().int().positive().default(10),
   MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()

@@ -15,9 +15,14 @@ import type { UsableUpload } from '../documents/index.js';
 import { createOwnerOrdersRouter } from './http/owner-routes.js';
 import { createOrdersRouter } from './http/routes.js';
 import { createOrderRepo } from './repo/order-repo.js';
-import { createOrderService, PREPARE_ORDER_JOB, type ShopInfo } from './service/order-service.js';
+import {
+  createOrderService,
+  PREPARE_ORDER_JOB,
+  type PrintingPort,
+  type ShopInfo,
+} from './service/order-service.js';
 
-export type { ShopInfo };
+export type { PrintingPort, ShopInfo };
 
 /** Public API of the orders module: the student's journey from print settings to a queue number. */
 export function createOrders(deps: {
@@ -33,6 +38,7 @@ export function createOrders(deps: {
   audit: Audit;
   botCheck: BotCheck;
   realtime: Realtime;
+  printing: PrintingPort;
   requireAuth: RequestHandler;
   requireShopAccess: RequestHandler;
   canAccessShop: (shopId: string, userId: string) => Promise<boolean>;
@@ -55,6 +61,7 @@ export function createOrders(deps: {
     logger: deps.logger,
     botCheck: deps.botCheck,
     realtime: deps.realtime,
+    printing: deps.printing,
     findShopBySlug: deps.findShopBySlug,
     findShopById: deps.findShopById,
     getRateTable: deps.getRateTable,
@@ -106,6 +113,8 @@ export function createOrders(deps: {
       retire: orders.retire,
       printFileUsage: orders.printFileUsage,
       evictFiles: orders.evictFiles,
+      markPrinted: orders.markPrinted,
+      touch: orders.touch,
     },
     ownerRouter: createOwnerOrdersRouter({
       orders,

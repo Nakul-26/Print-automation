@@ -17,6 +17,28 @@ export type RealtimeHandler = (
   payload: unknown,
 ) => Promise<unknown> | unknown;
 
+/** A print agent connected to the `/agent` namespace, already authenticated by its device token. */
+export interface AgentClient {
+  deviceId: string;
+  shopId: string;
+}
+
+export type AgentHandler = (agent: AgentClient, payload: unknown) => Promise<unknown> | unknown;
+
+/** The shop PCs' print agents: authenticated by device token, addressed by device id. */
+export interface AgentGateway {
+  /** Accept an agent event. Same acknowledgement rules as browser events. */
+  handle(event: string, handler: AgentHandler): void;
+  /** Called after an agent has connected (and any older connection of the same device was dropped). */
+  onConnect(callback: (agent: AgentClient) => void | Promise<void>): void;
+  onDisconnect(callback: (agent: AgentClient) => void | Promise<void>): void;
+  /** Sends to a device if it is connected (to whichever web process holds the connection). */
+  send(deviceId: string, event: string, payload: unknown): void;
+  isOnline(deviceId: string): Promise<boolean>;
+  /** Drops the device's connection (when it is removed from the shop). */
+  disconnect(deviceId: string): void;
+}
+
 /**
  * Live connections to browsers. The gateway knows nothing about orders or shops: feature modules
  * register the events they accept and publish to rooms they name. Events carry no personal data;
@@ -35,6 +57,7 @@ export interface Realtime {
    * PostgreSQL to the web processes that hold the connections.
    */
   attachEmitterOnly(): void;
+  readonly agents: AgentGateway;
   close(): Promise<void>;
 }
 
@@ -44,14 +67,33 @@ export function createRealtime(deps: {
   allowedOrigin: string;
   /** Turns the handshake's Cookie header into a user id, or null. */
   authenticate: (cookieHeader: string | undefined) => Promise<string | null>;
+  /** Turns an agent's device token into the device, or null. */
+  authenticateAgent?: (token: string) => Promise<AgentClient | null>;
   /** Shares events between processes (web and worker) through PostgreSQL. */
   pool?: Pool;
 }): Realtime {
   const handlers = new Map<string, RealtimeHandler>();
+  const agentHandlers = new Map<string, AgentHandler>();
+  const agentConnectCallbacks: ((agent: AgentClient) => void | Promise<void>)[] = [];
+  const agentDisconnectCallbacks: ((agent: AgentClient) => void | Promise<void>)[] = [];
+  const agentRoom = (deviceId: string): string => `agent:${deviceId}`;
+  const logSafely = (what: string) => (err: unknown) =>
+    deps.logger.error({ err }, `agent ${what} callback failed`);
+  const agents: AgentGateway = {
+    handle: (event, handler) => void agentHandlers.set(event, handler),
+    onConnect: (callback) => void agentConnectCallbacks.push(callback),
+    onDisconnect: (callback) => void agentDisconnectCallbacks.push(callback),
+    send: (deviceId, event, payload) =>
+      void io?.of('/agent').to(agentRoom(deviceId)).emit(event, payload),
+    isOnline: async (deviceId) =>
+      io ? (await io.of('/agent').in(agentRoom(deviceId)).fetchSockets()).length > 0 : false,
+    disconnect: (deviceId) => void io?.of('/agent').in(agentRoom(deviceId)).disconnectSockets(true),
+  };
   let io: Server | null = null;
   let emitterOnly = false;
 
   return {
+    agents,
     handle(event, handler) {
       handlers.set(event, handler);
     },
@@ -82,7 +124,7 @@ export function createRealtime(deps: {
           const origin = req.headers.origin;
           callback(null, origin === undefined || origin === deps.allowedOrigin);
         },
-        maxHttpBufferSize: 10_000,
+        maxHttpBufferSize: 100_000,
       });
       if (deps.pool) io.adapter(createAdapter(deps.pool));
 
@@ -94,6 +136,53 @@ export function createRealtime(deps: {
             next();
           })
           .catch((err: unknown) => next(err instanceof Error ? err : new Error('auth failed')));
+      });
+
+      const agentNamespace = io.of('/agent');
+      agentNamespace.use((socket, next) => {
+        const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
+        if (typeof token !== 'string' || !deps.authenticateAgent) {
+          next(new Error('unauthorized'));
+          return;
+        }
+        deps
+          .authenticateAgent(token)
+          .then((agent) => {
+            if (!agent) return next(new Error('unauthorized'));
+            socket.data['agent'] = agent;
+            next();
+          })
+          .catch((err: unknown) => next(err instanceof Error ? err : new Error('auth failed')));
+      });
+      agentNamespace.on('connection', (socket) => {
+        const agent = socket.data['agent'] as AgentClient;
+        // One live connection per device: a reconnect replaces the stale one.
+        void agentNamespace
+          .in(agentRoom(agent.deviceId))
+          .fetchSockets()
+          .then((others) => {
+            for (const other of others) if (other.id !== socket.id) other.disconnect(true);
+          })
+          .catch(logSafely('replace'))
+          .then(() => socket.join(agentRoom(agent.deviceId)))
+          .then(() => Promise.all(agentConnectCallbacks.map((cb) => cb(agent))))
+          .catch(logSafely('connect'));
+        for (const [event, handler] of agentHandlers) {
+          socket.on(event, (payload: unknown, ack?: unknown) => {
+            const reply = typeof ack === 'function' ? (ack as (r: unknown) => void) : () => {};
+            Promise.resolve()
+              .then(() => handler(agent, payload))
+              .then((result) => reply({ ok: true, ...(result as object | undefined) }))
+              .catch((err: unknown) => {
+                reply({ ok: false, error: err instanceof Error ? err.message : 'failed' });
+              });
+          });
+        }
+        socket.on('disconnect', () => {
+          void Promise.all(agentDisconnectCallbacks.map((cb) => cb(agent))).catch(
+            logSafely('disconnect'),
+          );
+        });
       });
 
       io.on('connection', (socket) => {

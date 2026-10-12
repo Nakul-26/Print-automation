@@ -6,6 +6,7 @@ import {
   type EstimateResponse,
   type OrderActionBody,
   type OrderItemInput,
+  type OrderPrintState,
   type OrderView,
   type OwnerOrder,
   type PublicShopInfo,
@@ -29,6 +30,7 @@ import { REALTIME } from '@print/contracts';
 import type { Audit } from '../../audit/index.js';
 import type { Conversion } from '../../conversion/index.js';
 import type { UsableUpload } from '../../documents/index.js';
+import type { SubmitOrderInput } from '../../printing/index.js';
 import { UploadAlreadyOrderedError, type OrderRecord, type OrderRepo } from '../repo/order-repo.js';
 
 export const PREPARE_ORDER_JOB = 'order.prepare';
@@ -44,6 +46,15 @@ export interface ShopInfo {
   currency: string;
 }
 
+/** What orders needs from the printing module (wired in the composition root). */
+export interface PrintingPort {
+  /** Queues the order's documents for the shop's printing app; 'manual' if there is none. */
+  submitOrder(input: SubmitOrderInput): Promise<'agent' | 'manual'>;
+  retryOrder(shopId: string, orderId: string): Promise<void>;
+  cancelOrder(orderId: string): Promise<void>;
+  statesFor(shopId: string, orderIds: string[]): Promise<Map<string, OrderPrintState>>;
+}
+
 export interface OrderServiceDeps {
   repo: OrderRepo;
   storage: StorageDriver;
@@ -53,6 +64,7 @@ export interface OrderServiceDeps {
   logger: Logger;
   botCheck: BotCheck;
   realtime: Realtime;
+  printing: PrintingPort;
   findShopBySlug: (slug: string) => Promise<ShopInfo | null>;
   findShopById: (id: string) => Promise<ShopInfo | null>;
   getRateTable: (shopId: string) => Promise<RateTable>;
@@ -179,7 +191,7 @@ export function createOrderService(deps: OrderServiceDeps) {
     deps.realtime.emit(`order:${order.lookupTokenHash}`, REALTIME.orderChanged);
   }
 
-  function toOwnerView(order: OrderRecord): OwnerOrder {
+  function toOwnerView(order: OrderRecord, print: OrderPrintState | null = null): OwnerOrder {
     return {
       id: order.id,
       queueNumber: formatQueueNumber(order.queueNumber),
@@ -199,6 +211,7 @@ export function createOrderService(deps: OrderServiceDeps) {
       estimatedAmountPaise: order.estimatedAmountPaise,
       finalAmountPaise: order.finalAmountPaise,
       currency: order.currency,
+      print,
       rejectionReason: order.rejectionReason,
       failureReason: order.failureReason,
       createdAt: order.createdAt.toISOString(),
@@ -468,7 +481,11 @@ export function createOrderService(deps: OrderServiceDeps) {
     async listQueue(shopId: string): Promise<OwnerOrder[]> {
       const since = new Date(now().getTime() - 24 * 3_600_000);
       const orders = await repo.listForShop(shopId, since, 200);
-      return orders.map(toOwnerView);
+      const printing = await deps.printing.statesFor(
+        shopId,
+        orders.filter((o) => o.status === 'printing' || o.status === 'completed').map((o) => o.id),
+      );
+      return orders.map((o) => toOwnerView(o, printing.get(o.id) ?? null));
     },
 
     /** Applies one of the owner's actions. The shop id comes from the authenticated tenant, never the URL alone. */
@@ -479,6 +496,10 @@ export function createOrderService(deps: OrderServiceDeps) {
     ): Promise<OwnerOrder> {
       const order = await repo.findForShop(tenant.shopId, orderId);
       if (!order) throw new HttpError(404, 'Order not found', 'not_found');
+
+      if (body.action === 'retry_print' || body.action === 'print_manually') {
+        return this.adjustPrinting(tenant, order, body.action);
+      }
 
       const target = { print: 'printing', reject: 'rejected', complete: 'completed' }[
         body.action
@@ -525,8 +546,111 @@ export function createOrderService(deps: OrderServiceDeps) {
             : {}),
         },
       });
+
+      if (body.action === 'print') {
+        await this.startPrinting(tenant, updated);
+      } else {
+        await deps.printing.cancelOrder(orderId).catch(() => undefined);
+      }
       announce(updated);
-      return toOwnerView(updated);
+      return toOwnerView(updated, await this.printStateOf(tenant.shopId, updated.id));
+    },
+
+    async printStateOf(shopId: string, orderId: string): Promise<OrderPrintState | null> {
+      return (await deps.printing.statesFor(shopId, [orderId])).get(orderId) ?? null;
+    },
+
+    /**
+     * The shop pressed Print. With a printing app the documents are queued for it; without one
+     * (or if that fails) the order simply stays "printing" and the shop prints by hand.
+     */
+    async startPrinting(tenant: { shopId: string; userId: string }, order: OrderRecord) {
+      const printable = order.items.filter((i) => i.printPdfKey);
+      if (printable.length === 0 || printable.length !== order.items.length) return;
+      try {
+        const items = [];
+        for (const item of printable) {
+          const pdf = await storage.get(item.printPdfKey!);
+          items.push({
+            itemId: item.id,
+            name: item.originalName,
+            fileKey: item.printPdfKey!,
+            fileBytes: item.printPdfBytes,
+            colorMode: item.printSettings.colorMode,
+            sides: item.printSettings.sides,
+            copies: item.printSettings.copies,
+            paperSize: item.printSettings.paperSize,
+            landscape: await conversion.isLandscape(pdf),
+          });
+        }
+        const mode = await deps.printing.submitOrder({
+          shopId: order.shopId,
+          orderId: order.id,
+          orderLabel: formatQueueNumber(order.queueNumber),
+          items,
+        });
+        await audit.record({
+          actorType: 'user',
+          actorId: tenant.userId,
+          shopId: tenant.shopId,
+          action: 'order.print_requested',
+          entity: 'order',
+          entityId: order.id,
+          metadata: { mode },
+        });
+      } catch (err) {
+        logger.error({ err, orderId: order.id }, 'could not queue the order for the printing app');
+      }
+    },
+
+    /** Retry a failed print, or give up on the printing app and print by hand. */
+    async adjustPrinting(
+      tenant: { shopId: string; userId: string },
+      order: OrderRecord,
+      action: 'retry_print' | 'print_manually',
+    ): Promise<OwnerOrder> {
+      if (order.status !== 'printing') {
+        throw new HttpError(409, 'This order is not being printed.', 'invalid_transition');
+      }
+      if (action === 'retry_print') await deps.printing.retryOrder(order.shopId, order.id);
+      else await deps.printing.cancelOrder(order.id);
+      await audit.record({
+        actorType: 'user',
+        actorId: tenant.userId,
+        shopId: tenant.shopId,
+        action: `order.${action}`,
+        entity: 'order',
+        entityId: order.id,
+      });
+      announce(order);
+      return toOwnerView(order, await this.printStateOf(order.shopId, order.id));
+    },
+
+    /** The printing app finished every document: the order is done. */
+    async markPrinted(orderId: string): Promise<void> {
+      const order = await repo.findById(orderId);
+      if (!order) return;
+      const updated = await repo.transition(order.shopId, orderId, ['printing'], {
+        status: 'completed',
+        finalAmountPaise: order.estimatedAmountPaise,
+        completedAt: now(),
+      });
+      if (!updated) return announce(order);
+      await audit.record({
+        actorType: 'agent',
+        shopId: order.shopId,
+        action: 'order.printed',
+        entity: 'order',
+        entityId: orderId,
+        metadata: { queueNumber: order.queueNumber },
+      });
+      announce(updated);
+    },
+
+    /** Refresh the screens of this order's shop and student. */
+    async touch(orderId: string): Promise<void> {
+      const order = await repo.findById(orderId);
+      if (order) announce(order);
     },
 
     /** The exact PDF that will be printed, for the owner's preview or manual download. */

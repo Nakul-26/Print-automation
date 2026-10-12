@@ -6,6 +6,7 @@ import { createDocuments } from './modules/documents/index.js';
 import { createIdentity, requireAuth } from './modules/identity/index.js';
 import { createOrders } from './modules/orders/index.js';
 import { createPricing } from './modules/pricing/index.js';
+import { createPrinting } from './modules/printing/index.js';
 import { createRetention } from './modules/retention/index.js';
 import { createShops } from './modules/shops/index.js';
 import { createGate, systemCapacity } from './platform/capacity/index.js';
@@ -44,10 +45,14 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
   });
 
   const identityRef: { userId?: (header: string | undefined) => Promise<string | null> } = {};
+  const printingRef: {
+    authenticate?: (token: string) => Promise<{ deviceId: string; shopId: string } | null>;
+  } = {};
   const realtime = createRealtime({
     logger,
     ...(sharedPool ? { pool: sharedPool } : {}),
     allowedOrigin: env.APP_ORIGIN,
+    authenticateAgent: (token) => printingRef.authenticate?.(token) ?? Promise.resolve(null),
     authenticate: (header) => identityRef.userId?.(header) ?? Promise.resolve(null),
   });
 
@@ -78,6 +83,25 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     requireAuth,
     requireShopAccess: shops.requireShopAccess,
   });
+  // Printing and orders talk to each other through narrow ports; orders is built second.
+  const ordersRef: { current?: ReturnType<typeof createOrders> } = {};
+  const printing = createPrinting({
+    db,
+    env,
+    logger,
+    storage,
+    queue,
+    realtime,
+    audit,
+    requireAuth,
+    requireShopAccess: shops.requireShopAccess,
+    orders: () => ({
+      markPrinted: (orderId) => ordersRef.current!.api.markPrinted(orderId),
+      touch: (orderId) => ordersRef.current!.api.touch(orderId),
+    }),
+    findShopName: async (shopId) => (await shops.findById(shopId))?.name ?? null,
+  });
+  printingRef.authenticate = printing.authenticateAgent;
   const orders = createOrders({
     db,
     env,
@@ -93,6 +117,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
       siteKey: env.TURNSTILE_SITE_KEY,
     }),
     realtime,
+    printing: printing.api,
     requireAuth,
     requireShopAccess: shops.requireShopAccess,
     canAccessShop: shops.canAccess,
@@ -101,6 +126,8 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     getRateTable: pricing.getRateTable,
     uploads: documents.api,
   });
+
+  ordersRef.current = orders;
 
   const retention = createRetention({
     env,
@@ -114,6 +141,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
   return {
     audit,
     retention,
+    printing,
     identity,
     shops,
     documents,

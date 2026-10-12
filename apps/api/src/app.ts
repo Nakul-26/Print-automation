@@ -62,6 +62,8 @@ export function createApp({ env, logger, readinessChecks, container }: AppDeps):
   v1.use('/owner/shops', container.shops.ownerRouter);
   v1.use('/owner/shops', container.pricing.ownerRouter);
   v1.use('/owner/shops', container.orders.ownerRouter);
+  v1.use('/owner/shops', container.printing.ownerRouter);
+  v1.use('/agent', container.printing.agentRouter);
   v1.use(container.documents.router);
   v1.use(container.orders.router);
   app.use('/api/v1', v1);

@@ -88,11 +88,15 @@ model Shop {
   createdAt         DateTime   @default(now()) @map("created_at")
   updatedAt         DateTime   @updatedAt @map("updated_at")
 
-  members ShopMember[]
-  uploads Upload[]
-  rates   ShopRate[]
-  pricing ShopPricing?
-  orders  Order[]
+  members       ShopMember[]
+  uploads       Upload[]
+  rates         ShopRate[]
+  pricing       ShopPricing?
+  orders        Order[]
+  printerAgents AgentDevice[]
+  agentPairings AgentPairing[]
+  shopPrinters  ShopPrinter[]
+  printJobs     PrintJob[]
 
   @@map("shops")
 }
@@ -287,4 +291,96 @@ model OrderCounter {
 
   @@id([shopId, dateKey])
   @@map("order_counters")
+}
+
+/// A print agent installed on a shop's PC. Authenticates with a device token (only its HMAC is stored).
+model AgentDevice {
+  id         String    @id @default(uuid()) @db.Uuid
+  shopId     String    @map("shop_id") @db.Uuid
+  name       String
+  tokenHash  String    @unique @map("token_hash")
+  version    String?
+  /// The printers the agent reported last: [{ name, isColor, supportsDuplex, isDefault, offline }].
+  printers   Json?
+  lastSeenAt DateTime? @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@map("agent_devices")
+}
+
+/// A 6-digit code the owner types into the agent to link it to the shop. Single use, short lived.
+model AgentPairing {
+  id        String    @id @default(uuid()) @db.Uuid
+  shopId    String    @map("shop_id") @db.Uuid
+  /// HMAC of the code; unique among every code ever issued so a code cannot be reused later.
+  codeHash  String    @unique @map("code_hash")
+  createdBy String    @map("created_by") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([expiresAt])
+  @@map("agent_pairings")
+}
+
+/// Which physical printer prints each colour mode for a shop.
+model ShopPrinter {
+  id             String   @id @default(uuid()) @db.Uuid
+  shopId         String   @map("shop_id") @db.Uuid
+  /// black_white | color
+  colorMode      String   @map("color_mode")
+  printerName    String   @map("printer_name")
+  supportsDuplex Boolean  @map("supports_duplex")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, colorMode])
+  @@map("shop_printers")
+}
+
+enum PrintJobStatus {
+  queued
+  sent
+  printing
+  done
+  failed
+  cancelled
+}
+
+/// One document to print on a shop's printer (a page of an order, or a test page).
+model PrintJob {
+  id          String         @id @default(uuid()) @db.Uuid
+  shopId      String         @map("shop_id") @db.Uuid
+  /// order | test
+  kind        String
+  orderId     String?        @map("order_id") @db.Uuid
+  orderItemId String?        @map("order_item_id") @db.Uuid
+  label       String
+  status      PrintJobStatus @default(queued)
+  /// Where the PDF lives in storage; the agent downloads it through the API.
+  fileKey     String         @map("file_key")
+  fileBytes   Int?           @map("file_bytes")
+  /// What to print and how: printer, colour, duplex, copies, paper size.
+  spec        Json
+  deviceId    String?        @map("device_id") @db.Uuid
+  attempts    Int            @default(0)
+  error       String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  sentAt      DateTime?      @map("sent_at")
+  finishedAt  DateTime?      @map("finished_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, status])
+  @@index([orderId])
+  @@map("print_jobs")
 }

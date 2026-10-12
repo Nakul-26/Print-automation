@@ -6,3 +6,4 @@ export * from './uploads.js';
 export * from './office.js';
 export * from './ordering.js';
 export * from './owner-orders.js';
+export * from './agent.js';

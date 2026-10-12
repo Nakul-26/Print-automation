@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OrderPrintState } from './agent.js';
 import { OrderStatus, PrintSettings } from './order.js';
 
 /** Socket.IO event and room names shared by the API and the web app. */
@@ -36,6 +37,8 @@ export const OwnerOrder = z.object({
   estimatedAmountPaise: z.number().int(),
   finalAmountPaise: z.number().int().nullable(),
   currency: z.string(),
+  /** Set once the shop pressed Print and a printing app is involved. */
+  print: OrderPrintState.nullable(),
   rejectionReason: z.string().nullable(),
   failureReason: z.string().nullable(),
   createdAt: z.string(),
@@ -51,6 +54,10 @@ export const MAX_FINAL_AMOUNT_PAISE = 10_000_000;
 /** What the shop can do with an order. Print and reject are the daily actions. */
 export const OrderActionBody = z.discriminatedUnion('action', [
   z.object({ action: z.literal('print') }),
+  /** The printing app failed or the job got stuck: send it again. */
+  z.object({ action: z.literal('retry_print') }),
+  /** Give up on the printing app for this order and print by hand. */
+  z.object({ action: z.literal('print_manually') }),
   z.object({ action: z.literal('reject'), reason: z.string().trim().min(1).max(200) }),
   z.object({
     action: z.literal('complete'),
