@@ -1,0 +1,31 @@
+{
+  "name": "@print/agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prints orders silently on the shop PC",
+  "author": "Print Platform",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "tsup --watch --onSuccess \"electron .\"",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "cli": "tsx src/cli.ts",
+    "fetch-sumatra": "node scripts/fetch-sumatra.mjs",
+    "pack:installer": "pnpm build && pnpm fetch-sumatra && electron-builder --win nsis --config electron-builder.config.cjs",
+    "pack:store": "pnpm build && pnpm fetch-sumatra && electron-builder --win appx --config electron-builder.config.cjs"
+  },
+  "dependencies": {
+    "@print/contracts": "workspace:*",
+    "electron-updater": "^6.8.9",
+    "socket.io-client": "^4.8.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "socket.io": "^4.8.4",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15"
+  }
+}

@@ -216,11 +216,70 @@ export function OrderCard({
         </form>
       )}
 
-      {printing && mode !== 'complete' && (
+      {printing && order.print && (
+        <div className="mt-4 space-y-3">
+          {order.print.state === 'failed' ? (
+            <>
+              <p role="alert" className="rounded-lg bg-magenta-wash px-3 py-2 text-sm text-magenta">
+                Could not print: {order.print.error ?? 'the printing app reported a problem'}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  className="flex-1"
+                  disabled={busy}
+                  onClick={() => onAct({ action: 'retry_print' })}
+                >
+                  Try again
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => onAct({ action: 'print_manually' })}
+                >
+                  Print by hand
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p
+                className="flex items-center gap-2 text-sm font-medium text-cyan-deep"
+                role="status"
+              >
+                <span
+                  className="pulse-dot inline-block size-2.5 rounded-full bg-cyan"
+                  aria-hidden
+                />
+                {order.print.state === 'waiting' && !order.print.agentOnline
+                  ? 'Waiting for the printing app, which is offline. It prints as soon as it is back.'
+                  : order.print.state === 'waiting'
+                    ? 'Sending to the printer…'
+                    : 'Printing…'}
+              </p>
+              {order.print.state === 'waiting' && !order.print.agentOnline && (
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => onAct({ action: 'print_manually' })}
+                >
+                  Print by hand instead
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {order.status === 'completed' && order.print?.state === 'done' && (
+        <p className="mt-3 text-sm text-ok">Printed automatically ✓</p>
+      )}
+
+      {printing && !order.print && mode !== 'complete' && (
         <div className="mt-4">
           <p className="mb-3 flex items-center gap-2 text-sm font-medium text-cyan-deep">
             <span className="pulse-dot inline-block size-2.5 rounded-full bg-cyan" aria-hidden />
-            Printing. Mark it done when the student has collected it.
+            Print it from the PDF, then mark it done when the student has collected it.
           </p>
           <Button className="w-full" disabled={busy} onClick={() => setMode('complete')}>
             Done
@@ -228,7 +287,7 @@ export function OrderCard({
         </div>
       )}
 
-      {printing && mode === 'complete' && (
+      {printing && !order.print && mode === 'complete' && (
         <form
           className="mt-4 space-y-3"
           onSubmit={(e) => {

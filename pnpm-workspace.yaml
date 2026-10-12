@@ -9,6 +9,10 @@ allowBuilds:
   '@prisma/engines': true
   '@prisma/client': true
   workerd: false
+  # The desktop printing app downloads its Electron runtime when installed.
+  electron: true
+  # Only needed for Squirrel installers, which we do not use.
+  electron-winstaller: false
 
 # Security: Prisma's CLI tooling (Studio, config loading) pulls in these at vulnerable versions.
 # Only patched releases within the same major line are forced here.

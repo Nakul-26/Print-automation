@@ -47,6 +47,19 @@ module.exports = {
       from: { path: '^apps/web/' },
       to: { path: '^apps/(api|agent|worker)/' },
     },
+    {
+      name: 'agent-and-api-are-independent',
+      severity: 'error',
+      comment: 'The shop-PC agent and the API talk over the wire; they share only packages/contracts.',
+      from: { path: '^apps/agent/' },
+      to: { path: '^apps/(api|web)/' },
+    },
+    {
+      name: 'api-must-not-import-agent',
+      severity: 'error',
+      from: { path: '^apps/api/' },
+      to: { path: '^apps/agent/' },
+    },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },

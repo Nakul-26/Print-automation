@@ -15,7 +15,7 @@ Status: accepted
 
 ## Storage quota
 
-- `STORAGE_MAX_BYTES` (5 GB) with a **high watermark** (90%) and a **low watermark** (75%), both configurable. Above the high mark, whole *units* (an upload together with its order's print files) are removed until usage is under the low mark.
+- `STORAGE_MAX_BYTES` (5 GB) with a **high watermark** (90%) and a **low watermark** (75%), both configurable. Above the high mark, whole _units_ (an upload together with its order's print files) are removed until usage is under the low mark.
 - Order of removal: abandoned uploads and finished orders first, then orders that may still be printed; within each group, oldest first. An open order that has to go becomes `expired` with a clear reason.
 - Per-shop quotas and the admin-panel override of the global limit arrive with phase 8; `maxBytes` is already a function so the setting can change without a restart.
 - New uploads are still refused up front when the disk is full (existing check), so the sweep is never the only line of defence.

@@ -1,12 +1,16 @@
 import {
   MeResponse,
+  PairingCode,
+  PrintingStatus,
   OwnerOrder,
   OwnerQueueResponse,
   ShopDetail,
   ShopListResponse,
   type OrderActionBody,
+  type PrinterMappingBody,
 } from '@print/contracts';
-import { ApiError, request } from './api';
+import { z } from 'zod';
+import { ApiError, readError, request } from './api';
 
 const BASE = '/api/v1';
 
@@ -36,6 +40,34 @@ export const ownerApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  printing: (shopId: string) => request(PrintingStatus, `/owner/shops/${shopId}/printing`),
+
+  createPairingCode: (shopId: string) =>
+    request(PairingCode, `/owner/shops/${shopId}/printing/pairing`, { method: 'POST' }),
+
+  saveMapping: (shopId: string, body: PrinterMappingBody) =>
+    request(PrintingStatus, `/owner/shops/${shopId}/printing/mapping`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  sendTestPages: (shopId: string) =>
+    request(z.object({ sent: z.number() }), `/owner/shops/${shopId}/printing/test`, {
+      method: 'POST',
+    }),
+
+  removePrintingApp: async (shopId: string, deviceId: string): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/owner/shops/${shopId}/printing/agents/${deviceId}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      throw new ApiError(0, 'network', 'No connection. Check your internet and try again.');
+    }
+    if (!res.ok) throw await readError(res);
+  },
 
   fileUrl: (shopId: string, orderId: string, itemId: string, download = false) =>
     `${BASE}/owner/shops/${shopId}/orders/${orderId}/items/${itemId}/file${download ? '?download=1' : ''}`,

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { REALTIME, type OrderActionBody, type OwnerOrder, type ShopDetail } from '@print/contracts';
+import {
+  REALTIME,
+  type OrderActionBody,
+  type OwnerOrder,
+  type PrintingStatus,
+  type ShopDetail,
+} from '@print/contracts';
 import { FileDialog } from '../../components/owner/FileDialog';
 import { OrderCard } from '../../components/owner/OrderCard';
+import { PrintingPanel } from '../../components/owner/PrintingPanel';
 import { QrPanel } from '../../components/owner/QrPanel';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { ApiError } from '../../lib/api';
@@ -27,6 +34,8 @@ export function QueuePage() {
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [showPrinting, setShowPrinting] = useState(false);
+  const [printing, setPrinting] = useState<PrintingStatus | null>(null);
   const [sound, setSound] = useState(soundEnabled);
   const [, setTick] = useState(0);
   const seen = useRef<Set<string> | null>(null);
@@ -66,6 +75,18 @@ export function QueuePage() {
   useEffect(() => {
     ownerApi.shop(shopId).then(setShop).catch(leave);
   }, [shopId, leave]);
+
+  // The header shows at a glance whether the printing app is connected.
+  useEffect(() => {
+    const check = () =>
+      ownerApi
+        .printing(shopId)
+        .then(setPrinting)
+        .catch(() => undefined);
+    void check();
+    const timer = setInterval(check, 20_000);
+    return () => clearInterval(timer);
+  }, [shopId]);
 
   useEffect(() => {
     void refresh();
@@ -166,6 +187,27 @@ export function QueuePage() {
             </Button>
             <Button
               variant="secondary"
+              className="min-h-10 gap-2 px-4 text-sm"
+              onClick={() => setShowPrinting(true)}
+            >
+              <span
+                className={`inline-block size-2.5 rounded-full ${
+                  printing?.agent?.connected && printing.ready
+                    ? 'bg-ok'
+                    : printing?.agent
+                      ? 'bg-magenta'
+                      : 'bg-line'
+                }`}
+                aria-hidden
+              />
+              {printing?.agent
+                ? printing.agent.connected && printing.ready
+                  ? 'Printing connected'
+                  : 'Printing needs attention'
+                : 'Set up printing'}
+            </Button>
+            <Button
+              variant="secondary"
               className="min-h-10 px-4 text-sm"
               onClick={toggleSound}
               aria-pressed={sound}
@@ -236,6 +278,14 @@ export function QueuePage() {
 
       {preview && (
         <FileDialog url={preview.url} title={preview.title} onClose={() => setPreview(null)} />
+      )}
+      {showPrinting && shop && (
+        <PrintingPanel
+          shopId={shopId}
+          canEdit={shop.role === 'owner'}
+          onClose={() => setShowPrinting(false)}
+          onStatus={setPrinting}
+        />
       )}
       {showQr && shop && (
         <QrPanel slug={shop.slug} name={shop.name} onClose={() => setShowQr(false)} />
