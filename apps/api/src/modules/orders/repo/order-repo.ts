@@ -65,6 +65,20 @@ export interface NewOrder {
   items: NewOrderItem[];
 }
 
+/** Just enough about an order to tell its shop and student that it changed. */
+export interface OrderRef {
+  id: string;
+  shopId: string;
+  lookupTokenHash: string;
+}
+
+export interface PrintFileUsage {
+  orderId: string;
+  status: OrderStatus;
+  createdAt: Date;
+  bytes: number;
+}
+
 /** Thrown when an upload is already part of another order. */
 export class UploadAlreadyOrderedError extends Error {}
 
@@ -191,6 +205,106 @@ export function createOrderRepo(db: Db) {
         data,
       });
       return count === 1 ? this.findForShop(shopId, id) : null;
+    },
+
+    /** Open orders past their retention time become expired. */
+    async expireOpenOrders(now: Date): Promise<OrderRef[]> {
+      const where = {
+        status: { in: ['pending', 'accepted', 'printing'] as OrderStatus[] },
+        expiresAt: { lte: now },
+      };
+      const refs = await db.order.findMany({
+        where,
+        select: { id: true, shopId: true, lookupTokenHash: true },
+      });
+      if (refs.length === 0) return [];
+      await db.order.updateMany({
+        where: { ...where, id: { in: refs.map((o) => o.id) } },
+        data: { status: 'expired', failureReason: 'Files were removed after the retention period' },
+      });
+      return refs;
+    },
+
+    /** Orders whose files never finished preparing are failed so students are not left waiting. */
+    async failStuckProcessing(createdBefore: Date): Promise<OrderRef[]> {
+      const where = { status: 'processing' as OrderStatus, createdAt: { lte: createdBefore } };
+      const refs = await db.order.findMany({
+        where,
+        select: { id: true, shopId: true, lookupTokenHash: true },
+      });
+      if (refs.length === 0) return [];
+      await db.order.updateMany({
+        where: { ...where, id: { in: refs.map((o) => o.id) } },
+        data: { status: 'failed', failureReason: 'Preparing the documents took too long' },
+      });
+      return refs;
+    },
+
+    /** Finished orders (any ending) past their retention time that still have print files. */
+    async listPurgeable(now: Date, limit: number): Promise<OrderRecord[]> {
+      const rows = await db.order.findMany({
+        where: {
+          filesPurgedAt: null,
+          expiresAt: { lte: now },
+          status: { in: ['completed', 'rejected', 'failed', 'expired'] },
+        },
+        include: withItems,
+        orderBy: { expiresAt: 'asc' },
+        take: limit,
+      });
+      return rows as unknown as OrderRecord[];
+    },
+
+    async findManyWithItems(ids: string[]): Promise<OrderRecord[]> {
+      const rows = await db.order.findMany({
+        where: { id: { in: ids }, filesPurgedAt: null },
+        include: withItems,
+      });
+      return rows as unknown as OrderRecord[];
+    },
+
+    /** Print-file bytes per order, for storage accounting. */
+    async printFileUsage(): Promise<PrintFileUsage[]> {
+      const rows = await db.order.findMany({
+        where: { filesPurgedAt: null, items: { some: { printPdfKey: { not: null } } } },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          items: { select: { printPdfBytes: true } },
+        },
+      });
+      return rows.map((o) => ({
+        orderId: o.id,
+        status: o.status,
+        createdAt: o.createdAt,
+        bytes: o.items.reduce((sum, i) => sum + (i.printPdfBytes ?? 0), 0),
+      }));
+    },
+
+    /**
+     * Records that an order's print files are gone. If the order was still open it can no longer
+     * be printed, so it expires, with the reason for the shop and the student.
+     */
+    async markFilesPurged(ids: string[], at: Date, reasonIfOpen: string): Promise<OrderRef[]> {
+      if (ids.length === 0) return [];
+      const open = ['pending', 'accepted', 'printing'] as OrderStatus[];
+      const refs = await db.order.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, shopId: true, lookupTokenHash: true },
+      });
+      await db.$transaction([
+        db.orderItem.updateMany({
+          where: { orderId: { in: ids } },
+          data: { printPdfKey: null, printPdfBytes: null },
+        }),
+        db.order.updateMany({
+          where: { id: { in: ids }, status: { in: open } },
+          data: { status: 'expired', failureReason: reasonIfOpen },
+        }),
+        db.order.updateMany({ where: { id: { in: ids } }, data: { filesPurgedAt: at } }),
+      ]);
+      return refs;
     },
 
     /** Orders in front of this one that are still waiting to be dealt with. */

@@ -62,8 +62,9 @@ export function statusCopy(status: OrderView['status']): {
       };
     case 'expired':
       return {
-        title: 'This order expired',
-        detail: 'Files are kept for one day. Place the order again.',
+        title: 'This order is no longer available',
+        detail:
+          'Files are deleted after one day, or sooner if the shop runs out of space. Place the order again.',
         tone: 'bad',
       };
     default:

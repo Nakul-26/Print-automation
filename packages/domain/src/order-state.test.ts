@@ -12,6 +12,13 @@ describe('order state machine', () => {
     expect(canTransition('rejected', 'completed')).toBe(false);
     expect(canTransition('completed', 'pending')).toBe(false);
   });
+  it('lets any order that is still open expire, and nothing else', () => {
+    for (const open of ['pending', 'accepted', 'printing'] as const) {
+      expect(canTransition(open, 'expired')).toBe(true);
+    }
+    expect(canTransition('completed', 'expired')).toBe(false);
+    expect(canTransition('rejected', 'expired')).toBe(false);
+  });
   it('knows terminal states', () => {
     expect(isTerminal('completed')).toBe(true);
     expect(isTerminal('pending')).toBe(false);

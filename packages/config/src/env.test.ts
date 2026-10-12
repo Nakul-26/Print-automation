@@ -13,6 +13,12 @@ describe('loadApiEnv', () => {
     expect(env.STORAGE_MAX_BYTES).toBe(5 * 1024 ** 3);
     expect(env.RETENTION_HOURS).toBe(24);
   });
+  it('requires the low watermark to be under the high one', () => {
+    expect(() =>
+      loadApiEnv({ ...valid, STORAGE_LOW_WATERMARK: '0.95', STORAGE_HIGH_WATERMARK: '0.9' }),
+    ).toThrow(/WATERMARK/);
+    expect(loadApiEnv(valid).STORAGE_HIGH_WATERMARK).toBe(0.9);
+  });
   it('fails with a readable message on bad config', () => {
     expect(() => loadApiEnv({ ...valid, SESSION_SECRET: 'short' })).toThrow(/SESSION_SECRET/);
   });

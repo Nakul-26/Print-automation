@@ -48,6 +48,9 @@ export function createDocuments(deps: {
       findUsableForShop: uploads.findUsableForShop.bind(uploads),
       readNormalized: uploads.readNormalized.bind(uploads),
       extendExpiry: uploads.extendExpiry.bind(uploads),
+      purgeExpired: uploads.purgeExpired.bind(uploads),
+      storedUploads: uploads.storedUploads.bind(uploads),
+      purgeUploads: uploads.purgeUploads.bind(uploads),
     },
     router: createUploadsRouter({
       uploads,

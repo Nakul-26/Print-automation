@@ -292,6 +292,27 @@ describe('realtime', () => {
     expect((await ask(anonymous, REALTIME.watchOrder, { token: 5 })).ok).toBe(false);
   });
 
+  it('closes the live connection when the user signs out', async () => {
+    const shop = await seedShop(ctx, 'Alpha Prints', 'alpha-prints');
+    const { agent, cookie } = await signIn(shop);
+    const owner = await open(cookie);
+    expect(await ask(owner, REALTIME.watchShop, { shopId: shop.shopId })).toEqual({ ok: true });
+
+    const closed = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('still connected')), 5000);
+      owner.once('disconnect', (reason) => {
+        clearTimeout(timer);
+        resolve(reason);
+      });
+    });
+    expect((await agent.post('/api/v1/auth/logout')).status).toBe(204);
+    expect(await closed).toBe('io server disconnect');
+
+    // The old cookie no longer works for a new connection to the shop's queue.
+    const again = await open(cookie);
+    expect((await ask(again, REALTIME.watchShop, { shopId: shop.shopId })).ok).toBe(false);
+  });
+
   it('rejects connections from another origin', async () => {
     const socket = connect(url, {
       transports: ['websocket'],

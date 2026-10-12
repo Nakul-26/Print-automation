@@ -15,13 +15,23 @@ import { createSessionService } from './service/session-service.js';
 export { requireAuth, requirePlatformAdmin };
 
 /** Public API of the identity module: users, passwords, sessions, and auth middleware. */
-export function createIdentity(deps: { db: Db; env: ApiEnv; audit: Audit }) {
+export function createIdentity(deps: {
+  db: Db;
+  env: ApiEnv;
+  audit: Audit;
+  onSessionEnded?: (userId: string) => void;
+}) {
   const repo = createIdentityRepo(deps.db);
   const sessions = createSessionService(repo, {
     secret: deps.env.SESSION_SECRET,
     ttlHours: deps.env.SESSION_TTL_HOURS,
   });
-  const auth = createAuthService({ repo, sessions, audit: deps.audit });
+  const auth = createAuthService({
+    repo,
+    sessions,
+    audit: deps.audit,
+    ...(deps.onSessionEnded ? { onSessionEnded: deps.onSessionEnded } : {}),
+  });
 
   return {
     router: createAuthRouter({

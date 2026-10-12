@@ -327,9 +327,10 @@ Exit: mobile student places an order; estimate matches hand calculations; concur
 Socket.IO gateway, live queue, accept/reject/complete, previews, instruction chips and printer preset display, final-amount override, notification sound, QR code generator, reconnect/refetch.
 Exit: two-browser end-to-end flow works, including after a dropped connection.
 
-**Phase 6: Retention, quota, audit, hardening (1-2 weeks)**
+**Phase 6: Retention, quota, audit, hardening (1-2 weeks) — DONE**
 24-hour retention job, quota eviction with watermarks, expiry of stale orders, audit events, abuse protections, privacy notice, backups, load tests, security review.
 Exit: expiry and eviction behave as specified in tests; full tenant-isolation and security suites pass.
+Done: retention sweep, quota eviction, audit, global rate limit, CSP/security headers, privacy notice, logout closes sockets, dependency audit (ADR 0008). Moved: DB backups + restore test to phase 9; shop-suspension socket cut-off and per-shop quotas to phase 8; a load test is run during the pilot setup in phase 9.
 
 **Phase 7: Print agent (2-3 weeks)**
 Windows agent first (Electron tray app + bundled SumatraPDF, MSIX package published to the Microsoft Store), with CUPS support after. Work items: pairing-code flow from the dashboard (6-digit, single-use, 15 minutes), Store packaging and certification submission, automatic printer discovery with colour/duplex detection and auto-mapping, print job protocol over the `/agent` socket, test-page button, status reporting and retry, offline detection, auto-update, startup at login, fallback to manual print, setup docs. The dashboard's Print button creates the job; Reject is one click.

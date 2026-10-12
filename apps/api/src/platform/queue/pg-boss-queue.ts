@@ -14,6 +14,7 @@ interface Registration {
 export class PgBossQueue implements JobQueue {
   private readonly boss: PgBoss;
   private readonly registrations: Registration[] = [];
+  private readonly schedules: { name: string; cron: string }[] = [];
   private started = false;
 
   constructor(
@@ -38,6 +39,10 @@ export class PgBossQueue implements JobQueue {
     });
   }
 
+  schedule(name: string, cron: string): void {
+    this.schedules.push({ name, cron });
+  }
+
   async enqueue<T extends object>(name: string, data: T): Promise<void> {
     await this.boss.send(name, data);
   }
@@ -60,6 +65,7 @@ export class PgBossQueue implements JobQueue {
         },
       );
     }
+    for (const { name, cron } of this.schedules) await this.boss.schedule(name, cron, {});
     this.started = true;
   }
 

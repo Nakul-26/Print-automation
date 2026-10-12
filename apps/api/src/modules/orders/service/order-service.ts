@@ -395,6 +395,61 @@ export function createOrderService(deps: OrderServiceDeps) {
       return toView(order, shop?.name ?? '', await repo.aheadCount(order));
     },
 
+    /**
+     * Retention, run by a schedule: open orders past their time expire, stuck orders fail, and
+     * the print files of every finished order past its time are deleted.
+     */
+    async retire(at: Date, stuckAfterMinutes: number) {
+      const expired = await repo.expireOpenOrders(at);
+      const failed = await repo.failStuckProcessing(
+        new Date(at.getTime() - stuckAfterMinutes * 60_000),
+      );
+      [...expired, ...failed].forEach(announce);
+
+      let purgedOrders = 0;
+      let bytes = 0;
+      for (;;) {
+        const batch = await repo.listPurgeable(at, 100);
+        if (batch.length === 0) break;
+        for (const order of batch) {
+          for (const item of order.items) {
+            if (item.printPdfKey) await storage.delete(item.printPdfKey);
+            bytes += item.printPdfBytes ?? 0;
+          }
+        }
+        await repo.markFilesPurged(
+          batch.map((o) => o.id),
+          at,
+          'Files were removed after the retention period',
+        );
+        purgedOrders += batch.length;
+        if (batch.length < 100) break;
+      }
+      return { expired: expired.length, failed: failed.length, purgedOrders, bytes };
+    },
+
+    /** Storage accounting for the print files the orders module holds. */
+    printFileUsage: () => repo.printFileUsage(),
+
+    /** Storage pressure: deletes the print files of these orders; open ones expire. */
+    async evictFiles(orderIds: string[], reason: string) {
+      const orders = await repo.findManyWithItems(orderIds);
+      let bytes = 0;
+      for (const order of orders) {
+        for (const item of order.items) {
+          if (item.printPdfKey) await storage.delete(item.printPdfKey);
+          bytes += item.printPdfBytes ?? 0;
+        }
+      }
+      const refs = await repo.markFilesPurged(
+        orders.map((o) => o.id),
+        now(),
+        reason,
+      );
+      refs.forEach(announce);
+      return { count: orders.length, bytes };
+    },
+
     /** The shop's working list: what is waiting, being printed, or finished in the last day. */
     async listQueue(shopId: string): Promise<OwnerOrder[]> {
       const since = new Date(now().getTime() - 24 * 3_600_000);

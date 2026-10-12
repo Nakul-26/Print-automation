@@ -10,6 +10,8 @@ export interface JobQueue {
     options?: { concurrency?: number; timeoutSeconds?: number; retryLimit?: number },
   ): void;
   enqueue<T extends object>(name: string, data: T): Promise<void>;
+  /** Runs a registered job on a cron schedule (UTC). Safe to call on every boot, and with several API instances only one run happens per tick. Call before `start()`. */
+  schedule(name: string, cron: string): void;
   start(): Promise<void>;
   stop(): Promise<void>;
 }

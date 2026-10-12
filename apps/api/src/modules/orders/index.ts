@@ -96,6 +96,12 @@ export function createOrders(deps: {
   });
 
   return {
+    /** The part of this module other modules may use. */
+    api: {
+      retire: orders.retire,
+      printFileUsage: orders.printFileUsage,
+      evictFiles: orders.evictFiles,
+    },
     ownerRouter: createOwnerOrdersRouter({
       orders,
       requireAuth: deps.requireAuth,

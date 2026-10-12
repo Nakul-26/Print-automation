@@ -24,6 +24,8 @@ export interface Realtime {
   /** Accept a client event. The return value is sent back as the acknowledgement; a throw becomes `{ error }`. */
   handle(event: string, handler: RealtimeHandler): void;
   emit(room: string, event: string, payload?: unknown): void;
+  /** Drops every connection of a user (on sign-out), so access ends with the session. */
+  disconnectUser(userId: string): void;
   /** Starts accepting connections on an existing HTTP server. Until then `emit` does nothing. */
   attach(server: HttpServer): void;
   close(): Promise<void>;
@@ -46,6 +48,13 @@ export function createRealtime(deps: {
 
     emit(room, event, payload) {
       io?.to(room).emit(event, payload);
+    },
+
+    disconnectUser(userId) {
+      if (!io) return;
+      for (const socket of io.sockets.sockets.values()) {
+        if (socket.data['userId'] === userId) socket.disconnect(true);
+      }
     },
 
     attach(server) {

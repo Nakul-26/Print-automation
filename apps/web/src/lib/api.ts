@@ -1,6 +1,5 @@
 import type { z } from 'zod';
-import type {
-  OrderItemInput} from '@print/contracts';
+import type { OrderItemInput } from '@print/contracts';
 import {
   CreateOrderResponse,
   CreateUploadResponse,

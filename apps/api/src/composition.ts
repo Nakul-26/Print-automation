@@ -5,6 +5,7 @@ import { createDocuments } from './modules/documents/index.js';
 import { createIdentity, requireAuth } from './modules/identity/index.js';
 import { createOrders } from './modules/orders/index.js';
 import { createPricing } from './modules/pricing/index.js';
+import { createRetention } from './modules/retention/index.js';
 import { createShops } from './modules/shops/index.js';
 import type { Db } from './platform/db/client.js';
 import { createBotCheck } from './platform/http/turnstile.js';
@@ -36,7 +37,13 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
   });
 
   const audit = createAudit({ db, logger });
-  const identity = createIdentity({ db, env, audit });
+  const identity = createIdentity({
+    db,
+    env,
+    audit,
+    // Signing out also ends the live connections that were opened with that session.
+    onSessionEnded: (userId) => realtime.disconnectUser(userId),
+  });
   identityRef.userId = identity.userIdFromCookieHeader;
   const shops = createShops({ db, audit, requireAuth });
   const documents = createDocuments({
@@ -77,8 +84,18 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     uploads: documents.api,
   });
 
+  const retention = createRetention({
+    env,
+    logger,
+    queue,
+    audit,
+    documents: documents.api,
+    orders: orders.api,
+  });
+
   return {
     audit,
+    retention,
     identity,
     shops,
     documents,

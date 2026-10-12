@@ -41,6 +41,7 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
     ORDER_RATE_LIMIT_MAX: '1000',
     ESTIMATE_RATE_LIMIT_MAX: '1000',
     UPLOAD_RATE_LIMIT_MAX: '1000',
+    API_RATE_LIMIT_MAX: '100000',
     STORAGE_ROOT: storageRoot,
     GS_COMMAND: process.env['GS_COMMAND'] ?? 'gs',
     OFFICE_COMMAND: process.env['OFFICE_COMMAND'] ?? 'python3 /opt/print-convert/convert.py',

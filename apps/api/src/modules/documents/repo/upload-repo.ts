@@ -8,6 +8,9 @@ export interface ConversionVariant {
 }
 export type ConversionVariants = Record<string, ConversionVariant>;
 
+/** An upload together with whether an order was placed with it. */
+export type StoredUpload = UploadRecord & { orderItem: { orderId: string } | null };
+
 export interface UploadRecord {
   id: string;
   shopId: string;
@@ -191,6 +194,49 @@ export function createUploadRepo(db: Db) {
 
     async delete(id: string): Promise<void> {
       await db.upload.deleteMany({ where: { id } });
+    },
+
+    /** Uploads whose retention time has passed but whose files are still on disk. */
+    async listExpired(now: Date, limit: number): Promise<StoredUpload[]> {
+      const rows = await db.upload.findMany({
+        where: { filesPurgedAt: null, expiresAt: { lte: now } },
+        include: { orderItem: { select: { orderId: true } } },
+        orderBy: { expiresAt: 'asc' },
+        take: limit,
+      });
+      return rows.map((row) => toRecord(row) as StoredUpload);
+    },
+
+    /** Every upload that still has files, oldest first. */
+    async listStored(): Promise<StoredUpload[]> {
+      const rows = await db.upload.findMany({
+        where: { filesPurgedAt: null },
+        include: { orderItem: { select: { orderId: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+      return rows.map((row) => toRecord(row) as StoredUpload);
+    },
+
+    async findManyStored(ids: string[]): Promise<StoredUpload[]> {
+      const rows = await db.upload.findMany({
+        where: { id: { in: ids }, filesPurgedAt: null },
+        include: { orderItem: { select: { orderId: true } } },
+      });
+      return rows.map((row) => toRecord(row) as StoredUpload);
+    },
+
+    /** Keeps the row (an order still points at it) but forgets where the files were. */
+    async markPurged(id: string, at: Date): Promise<void> {
+      await db.upload.updateMany({
+        where: { id },
+        data: {
+          filesPurgedAt: at,
+          originalKey: null,
+          normalizedKey: null,
+          normalizedSizeBytes: null,
+          conversionVariants: null as never,
+        },
+      });
     },
 
     /** Bytes currently held on disk for uploads whose files have not been purged. */

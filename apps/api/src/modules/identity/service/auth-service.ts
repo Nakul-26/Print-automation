@@ -19,6 +19,8 @@ export function createAuthService(deps: {
   repo: IdentityRepo;
   sessions: SessionService;
   audit: Audit;
+  /** Called after a user's session ends, so live connections can be closed. */
+  onSessionEnded?: (userId: string) => void;
 }) {
   const { repo, sessions, audit } = deps;
 
@@ -84,12 +86,14 @@ export function createAuthService(deps: {
 
     async logout(token: string, userId: string): Promise<void> {
       await sessions.revoke(token);
+      deps.onSessionEnded?.(userId);
       await audit.record({ actorType: 'user', actorId: userId, action: 'auth.logout' });
     },
 
     /** Used when a password changes or an account is disabled. */
-    revokeAllSessions(userId: string): Promise<void> {
-      return sessions.revokeAllForUser(userId);
+    async revokeAllSessions(userId: string): Promise<void> {
+      await sessions.revokeAllForUser(userId);
+      deps.onSessionEnded?.(userId);
     },
   };
 }

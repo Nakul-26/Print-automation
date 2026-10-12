@@ -20,6 +20,16 @@ export const ApiEnvSchema = z.object({
     .positive()
     .default(5 * 1024 ** 3),
   RETENTION_HOURS: z.coerce.number().positive().default(24),
+  /** Above this share of STORAGE_MAX_BYTES the oldest files are removed... */
+  STORAGE_HIGH_WATERMARK: z.coerce.number().gt(0).lte(1).default(0.9),
+  /** ...until usage is back under this share. */
+  STORAGE_LOW_WATERMARK: z.coerce.number().gt(0).lt(1).default(0.75),
+  /** How often expired files are deleted and storage is checked (cron, UTC). */
+  RETENTION_SWEEP_CRON: z.string().min(1).default('*/2 * * * *'),
+  /** Orders still "processing" after this long are marked failed. */
+  STUCK_PROCESSING_MINUTES: z.coerce.number().positive().default(15),
+  /** Requests per IP per 15 minutes across the whole API, on top of the per-endpoint limits. */
+  API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(6000),
   MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()
@@ -35,15 +45,15 @@ export const ApiEnvSchema = z.object({
   /** Max setting changes (re-conversions) per IP per 15 minutes. */
   CONVERT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   /** Max uploads per IP per 15 minutes. */
-  UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+  UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   /** Cloudflare Turnstile keys. Leave unset to disable bot checks (development). */
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_SITE_KEY: z.string().min(1).optional(),
   /** Max orders per IP per 15 minutes. */
-  ORDER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  ORDER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   /** Max price estimates per IP per 15 minutes. */
-  ESTIMATE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(240),
+  ESTIMATE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
   /** Most copies of one document in an order. */
   MAX_COPIES: z.coerce.number().int().positive().max(500).default(200),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(168),
@@ -59,6 +69,11 @@ export function loadApiEnv(source: NodeJS.ProcessEnv = process.env): ApiEnv {
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
     throw new Error(`Invalid environment configuration:\n${issues.join('\n')}`);
+  }
+  if (parsed.data.STORAGE_LOW_WATERMARK >= parsed.data.STORAGE_HIGH_WATERMARK) {
+    throw new Error(
+      'Invalid environment configuration:\n  - STORAGE_LOW_WATERMARK: must be lower than STORAGE_HIGH_WATERMARK',
+    );
   }
   return parsed.data;
 }

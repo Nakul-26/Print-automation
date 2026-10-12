@@ -14,7 +14,7 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   processing: ['pending', 'failed'],
   pending: ['accepted', 'printing', 'rejected', 'expired'],
   accepted: ['printing', 'completed', 'rejected', 'expired'],
-  printing: ['completed', 'accepted'],
+  printing: ['completed', 'accepted', 'expired'],
   completed: [],
   rejected: [],
   failed: [],

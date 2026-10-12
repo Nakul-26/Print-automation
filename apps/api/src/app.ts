@@ -1,12 +1,13 @@
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { ApiEnv } from '@print/config';
 import type { Container } from './composition.js';
 import { createHealthRouter, type ReadinessCheck } from './modules/health/index.js';
-import { createErrorHandler, notFoundHandler } from './platform/http/error-handler.js';
+import { createErrorHandler, HttpError, notFoundHandler } from './platform/http/error-handler.js';
 import { originCheck } from './platform/http/origin-check.js';
 import type { Logger } from './platform/observability/logger.js';
 
@@ -45,6 +46,17 @@ export function createApp({ env, logger, readinessChecks, container }: AppDeps):
 
   // Feature modules mount under /api/v1.
   const v1 = express.Router();
+  // A ceiling per connection across the whole API, on top of the stricter per-endpoint limits.
+  v1.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: env.API_RATE_LIMIT_MAX,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      handler: (_req, _res, next) =>
+        next(new HttpError(429, 'Too many requests, please slow down', 'rate_limited')),
+    }),
+  );
   v1.use(container.identity.authenticate);
   v1.use('/auth', container.identity.router);
   v1.use('/owner/shops', container.shops.ownerRouter);

@@ -19,7 +19,12 @@ import {
   UNSUPPORTED_LEGACY_MESSAGE,
   type Conversion,
 } from '../../conversion/index.js';
-import type { ConversionVariants, UploadRecord, UploadRepo } from '../repo/upload-repo.js';
+import type {
+  ConversionVariants,
+  StoredUpload,
+  UploadRecord,
+  UploadRepo,
+} from '../repo/upload-repo.js';
 
 export const PROCESS_UPLOAD_JOB = 'document.process-upload';
 
@@ -126,6 +131,25 @@ export function createUploadService(deps: UploadServiceDeps) {
     if (upload.normalizedKey) keys.add(upload.normalizedKey);
     for (const variant of Object.values(upload.conversionVariants ?? {})) keys.add(variant.key);
     for (const key of keys) await storage.delete(key);
+  }
+
+  /** Bytes this upload occupies on disk: the original plus every converted variant. */
+  function bytesOf(upload: UploadRecord): number {
+    const variants = Object.values(upload.conversionVariants ?? {});
+    const converted =
+      variants.length > 0
+        ? variants.reduce((sum, v) => sum + v.size, 0)
+        : (upload.normalizedSizeBytes ?? 0);
+    return upload.sizeBytes + converted;
+  }
+
+  /** Deletes the files. A row an order points at stays (without files); any other row goes too. */
+  async function purge(upload: StoredUpload): Promise<number> {
+    const bytes = bytesOf(upload);
+    await removeFiles(upload);
+    if (upload.orderItem) await repo.markPurged(upload.id, now());
+    else await repo.delete(upload.id);
+    return bytes;
   }
 
   function parseSettings(family: OfficeFamily, raw: unknown): OfficeSettings {
@@ -407,6 +431,42 @@ export function createUploadService(deps: UploadServiceDeps) {
     /** The converted PDF of an upload (what the print job is built from). */
     async readNormalized(normalizedKey: string): Promise<Buffer> {
       return storage.get(normalizedKey);
+    },
+
+    /** Retention: deletes the files of every upload past its expiry. */
+    async purgeExpired(at: Date): Promise<{ count: number; bytes: number }> {
+      let count = 0;
+      let bytes = 0;
+      for (;;) {
+        const batch = await repo.listExpired(at, 200);
+        if (batch.length === 0) break;
+        for (const upload of batch) {
+          bytes += await purge(upload);
+          count++;
+        }
+        if (batch.length < 200) break;
+      }
+      return { count, bytes };
+    },
+
+    /** What is on disk, oldest first, and which order (if any) each upload belongs to. */
+    async storedUploads(): Promise<
+      { uploadId: string; orderId: string | null; createdAt: Date; bytes: number }[]
+    > {
+      return (await repo.listStored()).map((u) => ({
+        uploadId: u.id,
+        orderId: u.orderItem?.orderId ?? null,
+        createdAt: u.createdAt,
+        bytes: bytesOf(u),
+      }));
+    },
+
+    /** Storage pressure: deletes the files of the given uploads. */
+    async purgeUploads(ids: string[]): Promise<{ count: number; bytes: number }> {
+      let bytes = 0;
+      const found = await repo.findManyStored(ids);
+      for (const upload of found) bytes += await purge(upload);
+      return { count: found.length, bytes };
     },
 
     /** Keeps the files of ordered uploads until the order's own expiry. */

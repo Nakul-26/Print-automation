@@ -9,3 +9,9 @@ allowBuilds:
   '@prisma/engines': true
   '@prisma/client': true
   workerd: false
+
+# Security: Prisma's CLI tooling (Studio, config loading) pulls in these at vulnerable versions.
+# Only patched releases within the same major line are forced here.
+overrides:
+  lodash: '>=4.17.24'
+  mysql2: '>=3.23.1'
