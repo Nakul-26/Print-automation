@@ -103,7 +103,7 @@ export function createUploadsRouter(deps: {
           });
           const body: CreateUploadResponse = {
             token: created.token,
-            upload: toView(created.upload),
+            upload: toView(created.upload, await deps.uploads.queueAheadOf(created.upload)),
           };
           res.status(201).json(body);
         } catch (e) {
@@ -117,7 +117,7 @@ export function createUploadsRouter(deps: {
   router.get('/uploads/:token', async (req, res) => {
     const found = await deps.uploads.getByToken(tokenParam(req.params['token']));
     res.set('Cache-Control', 'no-store');
-    res.json(toView(found));
+    res.json(toView(found, await deps.uploads.queueAheadOf(found)));
   });
 
   router.post('/uploads/:token/conversion', convertLimiter, async (req, res) => {
@@ -127,7 +127,7 @@ export function createUploadsRouter(deps: {
       body.settings,
     );
     res.set('Cache-Control', 'no-store');
-    res.json(toView(updated));
+    res.json(toView(updated, await deps.uploads.queueAheadOf(updated)));
   });
 
   router.get('/uploads/:token/preview', async (req, res) => {

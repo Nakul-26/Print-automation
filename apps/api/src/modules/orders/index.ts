@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import type { ApiEnv } from '@print/config';
 import { REALTIME, ORDER_LOOKUP_TOKEN_PATTERN } from '@print/contracts';
 import type { RateTable } from '@print/domain';
+import type { Gate } from '../../platform/capacity/index.js';
 import type { Db } from '../../platform/db/client.js';
 import type { BotCheck } from '../../platform/http/turnstile.js';
 import type { Logger } from '../../platform/observability/logger.js';
@@ -26,6 +27,9 @@ export function createOrders(deps: {
   storage: StorageDriver;
   queue: JobQueue;
   conversion: Conversion;
+  /** Jobs of this module that this process may run at once. */
+  jobConcurrency: number;
+  previewGate: Gate;
   audit: Audit;
   botCheck: BotCheck;
   realtime: Realtime;
@@ -55,6 +59,7 @@ export function createOrders(deps: {
     findShopById: deps.findShopById,
     getRateTable: deps.getRateTable,
     uploads: deps.uploads,
+    previewGate: deps.previewGate,
     tokenSecret: deps.env.SESSION_SECRET,
     retentionHours: deps.env.RETENTION_HOURS,
     maxCopies: deps.env.MAX_COPIES,
@@ -65,7 +70,7 @@ export function createOrders(deps: {
     PREPARE_ORDER_JOB,
     ({ orderId }) => orders.prepare(orderId),
     {
-      concurrency: deps.env.WORKER_CONCURRENCY,
+      concurrency: deps.jobConcurrency,
       timeoutSeconds: 300,
     },
   );

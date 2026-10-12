@@ -1,4 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
+import { createAdapter } from '@socket.io/postgres-adapter';
+import type { Pool } from 'pg';
 import { Server } from 'socket.io';
 import type { Logger } from '../observability/logger.js';
 
@@ -28,6 +30,11 @@ export interface Realtime {
   disconnectUser(userId: string): void;
   /** Starts accepting connections on an existing HTTP server. Until then `emit` does nothing. */
   attach(server: HttpServer): void;
+  /**
+   * For a process that serves no browsers (the job worker): `emit` is relayed through
+   * PostgreSQL to the web processes that hold the connections.
+   */
+  attachEmitterOnly(): void;
   close(): Promise<void>;
 }
 
@@ -37,9 +44,12 @@ export function createRealtime(deps: {
   allowedOrigin: string;
   /** Turns the handshake's Cookie header into a user id, or null. */
   authenticate: (cookieHeader: string | undefined) => Promise<string | null>;
+  /** Shares events between processes (web and worker) through PostgreSQL. */
+  pool?: Pool;
 }): Realtime {
   const handlers = new Map<string, RealtimeHandler>();
   let io: Server | null = null;
+  let emitterOnly = false;
 
   return {
     handle(event, handler) {
@@ -57,6 +67,13 @@ export function createRealtime(deps: {
       }
     },
 
+    attachEmitterOnly() {
+      const emitter = new Server();
+      if (deps.pool) emitter.adapter(createAdapter(deps.pool));
+      io = emitter;
+      emitterOnly = true;
+    },
+
     attach(server) {
       io = new Server(server, {
         // The proxy serves the app and the API from one origin, so no wildcard CORS is needed.
@@ -67,6 +84,7 @@ export function createRealtime(deps: {
         },
         maxHttpBufferSize: 10_000,
       });
+      if (deps.pool) io.adapter(createAdapter(deps.pool));
 
       io.use((socket, next) => {
         deps
@@ -103,6 +121,11 @@ export function createRealtime(deps: {
       if (!io) return;
       const server = io;
       io = null;
+      if (emitterOnly) {
+        // No HTTP server or engine to shut down: just stop listening to the database.
+        await server.of('/').adapter.close?.();
+        return;
+      }
       await new Promise<void>((resolve) => void server.close(() => resolve()));
     },
   };

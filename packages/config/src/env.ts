@@ -5,6 +5,12 @@ const bool = z
   .default('false')
   .transform((v) => v === 'true');
 
+/** A positive whole number, or unset. An empty value (e.g. an unfilled compose variable) counts as unset. */
+const optionalCount = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.coerce.number().int().positive().optional(),
+);
+
 export const ApiEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -46,7 +52,22 @@ export const ApiEnvSchema = z.object({
   CONVERT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   /** Max uploads per IP per 15 minutes. */
   UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
-  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  /**
+   * What this process does: `all` (web + jobs, simplest), `api` (web only), or `worker`
+   * (jobs only). Run the same image twice, as `api` and `worker`, to keep heavy conversions
+   * from slowing page loads; add worker replicas for more capacity.
+   */
+  APP_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
+  /** Jobs this process runs at once. Unset = worked out from CPU cores and memory (see JOB_MEMORY_MB). */
+  WORKER_CONCURRENCY: optionalCount,
+  /** Of those, how many may be LibreOffice conversions. Unset = about half. */
+  OFFICE_CONCURRENCY: optionalCount,
+  /** Memory one conversion job is assumed to need; caps the automatic concurrency. */
+  JOB_MEMORY_MB: z.coerce.number().int().positive().default(600),
+  /** Print previews built at once in this process. Unset = from CPU cores. */
+  PREVIEW_CONCURRENCY: optionalCount,
+  /** Previews allowed to wait; beyond that students are asked to retry shortly. */
+  PREVIEW_MAX_WAITING: z.coerce.number().int().nonnegative().default(30),
   /** Cloudflare Turnstile keys. Leave unset to disable bot checks (development). */
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   TURNSTILE_SITE_KEY: z.string().min(1).optional(),

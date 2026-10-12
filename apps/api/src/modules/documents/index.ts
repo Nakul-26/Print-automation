@@ -8,6 +8,7 @@ import { createUploadsRouter, uploadTempDir, type PublicShop } from './http/rout
 import { createUploadRepo } from './repo/upload-repo.js';
 import {
   createUploadService,
+  PROCESS_OFFICE_JOB,
   PROCESS_UPLOAD_JOB,
   type ProcessUploadJob,
 } from './service/upload-service.js';
@@ -23,6 +24,8 @@ export function createDocuments(deps: {
   storage: StorageDriver;
   queue: JobQueue;
   conversion: Conversion;
+  /** How many jobs of each lane this process may run at once. */
+  concurrency: { quick: number; office: number };
   findShopBySlug: (slug: string) => Promise<PublicShop | null>;
 }) {
   const repo = createUploadRepo(deps.db);
@@ -38,7 +41,11 @@ export function createDocuments(deps: {
   });
 
   deps.queue.register<ProcessUploadJob>(PROCESS_UPLOAD_JOB, (job) => uploads.process(job), {
-    concurrency: deps.env.WORKER_CONCURRENCY,
+    concurrency: deps.concurrency.quick,
+    timeoutSeconds: 300,
+  });
+  deps.queue.register<ProcessUploadJob>(PROCESS_OFFICE_JOB, (job) => uploads.process(job), {
+    concurrency: deps.concurrency.office,
     timeoutSeconds: 300,
   });
 

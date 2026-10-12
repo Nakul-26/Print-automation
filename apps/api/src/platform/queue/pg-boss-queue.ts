@@ -20,6 +20,8 @@ export class PgBossQueue implements JobQueue {
   constructor(
     connectionString: string,
     private readonly logger: Logger,
+    /** false = only enqueue jobs; another process (the worker) runs them. */
+    private readonly runJobs = true,
   ) {
     this.boss = new PgBoss({ connectionString, schema: 'pgboss' });
     this.boss.on('error', (err) => this.logger.error({ err }, 'job queue error'));
@@ -57,6 +59,7 @@ export class PgBossQueue implements JobQueue {
         retryBackoff: true,
         expireInSeconds: reg.timeoutSeconds,
       });
+      if (!this.runJobs) continue;
       await this.boss.work<object>(
         reg.name,
         { localConcurrency: reg.concurrency, pollingIntervalSeconds: 0.5 },

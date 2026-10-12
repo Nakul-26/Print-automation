@@ -23,7 +23,8 @@ services:
       timeout: 5s
       retries: 10
 
-  api:
+  # Web + API only. Heavy document work happens in `worker`, so page loads stay quick.
+  api: &api
     build:
       context: ..
       dockerfile: infra/Dockerfile.api
@@ -32,8 +33,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
+    environment: &api-env
       NODE_ENV: production
+      APP_ROLE: api
       DATABASE_URL: postgresql://${POSTGRES_USER:-print}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-print}
       APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN, e.g. https://print.example.com}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (32+ random characters)}
@@ -41,14 +43,38 @@ services:
       STORAGE_MAX_BYTES: ${STORAGE_MAX_BYTES:-5368709120}
       RETENTION_HOURS: ${RETENTION_HOURS:-24}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      # Leave unset to size from the container's CPU and memory (recommended).
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
+      OFFICE_CONCURRENCY: ${OFFICE_CONCURRENCY:-}
+      JOB_MEMORY_MB: ${JOB_MEMORY_MB:-600}
+      PREVIEW_CONCURRENCY: ${PREVIEW_CONCURRENCY:-}
+      PREVIEW_MAX_WAITING: ${PREVIEW_MAX_WAITING:-30}
     volumes:
       - files:/data
-    # Conversion is CPU/RAM heavy (LibreOffice); keep it from starving the database.
     deploy:
       resources:
         limits:
-          memory: ${API_MEMORY_LIMIT:-2g}
+          memory: ${API_MEMORY_LIMIT:-1g}
+
+  # Runs the queued jobs: PDF clean-up, Word/Excel/PowerPoint conversion (LibreOffice), order
+  # preparation and the retention sweep. This is the part to scale: set WORKER_REPLICAS, and
+  # keep (CPU cores - 1) >= replicas x concurrency per replica. More workers than the server
+  # has cores makes every job slower, not faster. All replicas share the `files` volume, so
+  # they must run on the same host (a multi-host setup needs S3-style storage first).
+  worker:
+    <<: *api
+    environment:
+      <<: *api-env
+      APP_ROLE: worker
+    # The worker has no public port; the probe in the image checks the same /health.
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-3g}
+    depends_on:
+      api:
+        condition: service_healthy
 
   web:
     build:

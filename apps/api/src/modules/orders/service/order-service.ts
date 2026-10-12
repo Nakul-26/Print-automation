@@ -18,6 +18,7 @@ import {
   priceOrder,
   type RateTable,
 } from '@print/domain';
+import { GateFullError, type Gate } from '../../../platform/capacity/index.js';
 import { HttpError } from '../../../platform/http/error-handler.js';
 import type { BotCheck } from '../../../platform/http/turnstile.js';
 import type { Logger } from '../../../platform/observability/logger.js';
@@ -60,6 +61,8 @@ export interface OrderServiceDeps {
     readNormalized(normalizedKey: string): Promise<Buffer>;
     extendExpiry(uploadIds: string[], expiresAt: Date): Promise<void>;
   };
+  /** Limits how many print previews are built at once; extra requests wait or are turned away. */
+  previewGate: Gate;
   tokenSecret: string;
   retentionHours: number;
   maxCopies: number;
@@ -295,14 +298,25 @@ export function createOrderService(deps: OrderServiceDeps) {
         }
         pages = parsed.pages.length === upload.pageCount ? undefined : parsed.pages;
       }
-      const source = await deps.uploads.readNormalized(upload.normalizedKey);
-      return conversion.buildPrintPdf({
-        source,
-        ...(pages ? { pages } : {}),
-        colorMode: settings.colorMode,
-        pagesPerSheet: settings.pagesPerSheet,
-        paperSize: settings.paperSize,
-      });
+      try {
+        return await deps.previewGate.run(async () => {
+          const source = await deps.uploads.readNormalized(upload.normalizedKey);
+          return conversion.buildPrintPdf({
+            source,
+            ...(pages ? { pages } : {}),
+            colorMode: settings.colorMode,
+            pagesPerSheet: settings.pagesPerSheet,
+            paperSize: settings.paperSize,
+          });
+        });
+      } catch (err) {
+        if (err instanceof GateFullError) {
+          throw new HttpError(503, 'The preview is busy, trying again in a moment.', 'busy', {
+            'Retry-After': '3',
+          });
+        }
+        throw err;
+      }
     },
 
     async create(

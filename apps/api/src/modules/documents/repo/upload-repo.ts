@@ -31,6 +31,7 @@ export interface UploadRecord {
   normalizedKey: string | null;
   normalizedSizeBytes: number | null;
   createdAt: Date;
+  updatedAt: Date;
   expiresAt: Date;
   filesPurgedAt: Date | null;
 }
@@ -239,23 +240,41 @@ export function createUploadRepo(db: Db) {
       });
     },
 
-    /** Bytes currently held on disk for uploads whose files have not been purged. */
+    /**
+     * Bytes currently held on disk for uploads whose files have not been purged. Summed in the
+     * database: every upload checks this, so it must not read every row into memory.
+     */
     async storedBytes(): Promise<number> {
-      const rows = await db.upload.findMany({
-        where: { filesPurgedAt: null },
-        select: { sizeBytes: true, conversionVariants: true, normalizedSizeBytes: true },
+      const rows = await db.$queryRaw<{ total: number }[]>`
+        SELECT COALESCE(SUM(
+          size_bytes + CASE
+            WHEN jsonb_typeof(conversion_variants) = 'object' AND conversion_variants <> '{}'::jsonb
+              THEN (SELECT COALESCE(SUM((v.value ->> 'size')::bigint), 0) FROM jsonb_each(conversion_variants) v)
+            ELSE COALESCE(normalized_size_bytes, 0)
+          END
+        ), 0)::float8 AS total
+        FROM uploads
+        WHERE files_purged_at IS NULL`;
+      return Number(rows[0]?.total ?? 0);
+    },
+
+    /**
+     * Files of the same kind of work that were queued before this one and are still being
+     * prepared (including the ones being worked on right now).
+     */
+    async countProcessingAhead(upload: {
+      id: string;
+      updatedAt: Date;
+      office: boolean;
+    }): Promise<number> {
+      return db.upload.count({
+        where: {
+          status: 'processing',
+          id: { not: upload.id },
+          updatedAt: { lt: upload.updatedAt },
+          documentKind: upload.office ? 'office' : { not: 'office' },
+        },
       });
-      let total = 0;
-      for (const row of rows) {
-        total += row.sizeBytes;
-        const variants = row.conversionVariants as ConversionVariants | null;
-        if (variants && Object.keys(variants).length > 0) {
-          for (const v of Object.values(variants)) total += v.size;
-        } else {
-          total += row.normalizedSizeBytes ?? 0;
-        }
-      }
-      return total;
     },
   };
 }

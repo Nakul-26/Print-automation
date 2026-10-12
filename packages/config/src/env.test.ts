@@ -19,6 +19,17 @@ describe('loadApiEnv', () => {
     ).toThrow(/WATERMARK/);
     expect(loadApiEnv(valid).STORAGE_HIGH_WATERMARK).toBe(0.9);
   });
+  it('treats unset or empty concurrency settings as automatic', () => {
+    const auto = loadApiEnv({ ...valid, WORKER_CONCURRENCY: '', OFFICE_CONCURRENCY: '' });
+    expect(auto.WORKER_CONCURRENCY).toBeUndefined();
+    expect(auto.OFFICE_CONCURRENCY).toBeUndefined();
+    expect(auto.APP_ROLE).toBe('all');
+    expect(loadApiEnv({ ...valid, WORKER_CONCURRENCY: '3', APP_ROLE: 'worker' })).toMatchObject({
+      WORKER_CONCURRENCY: 3,
+      APP_ROLE: 'worker',
+    });
+    expect(() => loadApiEnv({ ...valid, WORKER_CONCURRENCY: '0' })).toThrow(/WORKER_CONCURRENCY/);
+  });
   it('fails with a readable message on bad config', () => {
     expect(() => loadApiEnv({ ...valid, SESSION_SECRET: 'short' })).toThrow(/SESSION_SECRET/);
   });

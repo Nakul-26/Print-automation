@@ -26,6 +26,8 @@ export function PrintPreview({
   const [version, setVersion] = useState(0);
   const [updating, setUpdating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped to try again when the server says it is busy.
+  const [retry, setRetry] = useState(0);
 
   const urlRef = useRef<string | null>(null);
   const key = useMemo(() => JSON.stringify(settings), [settings]);
@@ -33,6 +35,7 @@ export function PrintPreview({
   useEffect(() => {
     const controller = new AbortController();
     setUpdating(true);
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       api
         .printPreview(slug, { uploadToken: token, settings: JSON.parse(key) }, controller.signal)
@@ -47,6 +50,11 @@ export function PrintPreview({
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
+          if (err instanceof ApiError && err.code === 'busy') {
+            // Many students are previewing at once: wait a moment and ask again.
+            retryTimer = setTimeout(() => setRetry((n) => n + 1), 3000);
+            return;
+          }
           // Keep showing the last good preview; say what to fix.
           setError(err instanceof ApiError ? err.message : 'Could not update the preview.');
           setUpdating(false);
@@ -54,9 +62,10 @@ export function PrintPreview({
     }, 400);
     return () => {
       clearTimeout(timer);
+      clearTimeout(retryTimer);
       controller.abort();
     };
-  }, [slug, token, key, revision]);
+  }, [slug, token, key, revision, retry]);
 
   useEffect(
     () => () => {

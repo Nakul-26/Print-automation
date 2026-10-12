@@ -112,6 +112,9 @@ export function FilesStep({
                   {item.upload?.documentKind === 'office'
                     ? 'Converting to PDF…'
                     : 'Getting your file ready…'}
+                  {item.upload?.queueAhead
+                    ? ` ${item.upload.queueAhead} ${item.upload.queueAhead === 1 ? 'file is' : 'files are'} ahead of yours.`
+                    : ''}
                 </p>
               )}
               {item.phase === 'ready' && <p className="mt-2 text-sm font-medium text-ok">Ready</p>}

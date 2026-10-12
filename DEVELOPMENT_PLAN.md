@@ -332,6 +332,9 @@ Exit: two-browser end-to-end flow works, including after a dropped connection.
 Exit: expiry and eviction behave as specified in tests; full tenant-isolation and security suites pass.
 Done: retention sweep, quota eviction, audit, global rate limit, CSP/security headers, privacy notice, logout closes sockets, dependency audit (ADR 0008). Moved: DB backups + restore test to phase 9; shop-suspension socket cut-off and per-shop quotas to phase 8; a load test is run during the pilot setup in phase 9.
 
+**Phase 6.5: Burst capacity — DONE**
+Web and worker run as separate processes (`APP_ROLE`), worker concurrency sized from CPU and memory, slow lane for Office conversions, bounded print-preview capacity with a retry hint, "N files ahead of yours" for students, database-side storage sum. Autoscaling itself is deliberately not built: on one server it cannot add CPU. Capacity is raised by a bigger server or a second worker host, decided from the Phase 9 load test (ADR 0009).
+
 **Phase 7: Print agent (2-3 weeks)**
 Windows agent first (Electron tray app + bundled SumatraPDF, MSIX package published to the Microsoft Store), with CUPS support after. Work items: pairing-code flow from the dashboard (6-digit, single-use, 15 minutes), Store packaging and certification submission, automatic printer discovery with colour/duplex detection and auto-mapping, print job protocol over the `/agent` socket, test-page button, status reporting and retry, offline detection, auto-update, startup at login, fallback to manual print, setup docs. The dashboard's Print button creates the job; Reject is one click.
 Exit: on a clean Windows PC, the owner completes setup in a few steps (install from the Store, type the pairing code) with no security warning, sees "Printing connected ✓", and from then on clicking Print produces the job on the right printer with the right colour, sides, and copies, without touching the print dialog.

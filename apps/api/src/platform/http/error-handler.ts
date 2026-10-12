@@ -8,6 +8,8 @@ export class HttpError extends Error {
     readonly status: number,
     message: string,
     readonly code = 'error',
+    /** Extra response headers, e.g. Retry-After. */
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
   }
@@ -21,6 +23,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
   // Express identifies error middleware by its 4-argument signature.
   return (err, _req, res, _next) => {
     if (err instanceof HttpError) {
+      res.set(err.headers);
       res.status(err.status).json({ error: { code: err.code, message: err.message } });
       return;
     }

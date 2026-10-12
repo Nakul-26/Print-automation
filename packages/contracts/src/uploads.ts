@@ -20,6 +20,8 @@ export const UploadView = z.object({
   /** Increments each time conversion settings change; lets the UI detect a finished re-conversion. */
   revision: z.number().int(),
   pageCount: z.number().int().nullable(),
+  /** While processing: how many other files are being prepared ahead of this one. */
+  queueAhead: z.number().int().nonnegative().nullable(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   createdAt: z.string(),

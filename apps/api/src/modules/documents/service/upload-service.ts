@@ -26,7 +26,16 @@ import type {
   UploadRepo,
 } from '../repo/upload-repo.js';
 
+/** Quick lane: PDFs and images. */
 export const PROCESS_UPLOAD_JOB = 'document.process-upload';
+/**
+ * Slow lane: Word, Excel and PowerPoint (LibreOffice). A separate queue with its own small
+ * worker pool, so a burst of Office files cannot hold up quick PDF and image jobs.
+ */
+export const PROCESS_OFFICE_JOB = 'document.process-office';
+
+const jobNameFor = (kind: string): string =>
+  kind === 'office' ? PROCESS_OFFICE_JOB : PROCESS_UPLOAD_JOB;
 
 export interface ProcessUploadJob {
   uploadId: string;
@@ -68,7 +77,7 @@ export function cleanDisplayName(name: string): string {
   return cleaned.length > 0 ? cleaned : 'document';
 }
 
-export function toView(upload: UploadRecord): UploadView {
+export function toView(upload: UploadRecord, queueAhead: number | null = null): UploadView {
   return {
     id: upload.id,
     status: upload.status,
@@ -78,6 +87,7 @@ export function toView(upload: UploadRecord): UploadView {
     conversionSettings: upload.conversionSettings,
     revision: upload.conversionRevision,
     pageCount: upload.pageCount,
+    queueAhead: upload.status === 'processing' ? queueAhead : null,
     errorCode: upload.errorCode,
     errorMessage: upload.errorMessage,
     createdAt: upload.createdAt.toISOString(),
@@ -235,7 +245,10 @@ export function createUploadService(deps: UploadServiceDeps) {
         });
 
         try {
-          await queue.enqueue<ProcessUploadJob>(PROCESS_UPLOAD_JOB, { uploadId: id, revision: 0 });
+          await queue.enqueue<ProcessUploadJob>(jobNameFor(upload.documentKind), {
+            uploadId: id,
+            revision: 0,
+          });
         } catch (err) {
           await storage.delete(originalKey);
           await repo.delete(id);
@@ -367,7 +380,7 @@ export function createUploadService(deps: UploadServiceDeps) {
         );
         if (!started) throw new HttpError(409, 'The document changed, try again', 'conflict');
         try {
-          await queue.enqueue<ProcessUploadJob>(PROCESS_UPLOAD_JOB, {
+          await queue.enqueue<ProcessUploadJob>(PROCESS_OFFICE_JOB, {
             uploadId: upload.id,
             revision: upload.conversionRevision + 1,
           });
@@ -381,6 +394,16 @@ export function createUploadService(deps: UploadServiceDeps) {
         }
       }
       return this.getByToken(token);
+    },
+
+    /** Shown to the student while their file waits: how many files are ahead of it. */
+    async queueAheadOf(upload: UploadRecord): Promise<number | null> {
+      if (upload.status !== 'processing') return null;
+      return repo.countProcessingAhead({
+        id: upload.id,
+        updatedAt: upload.updatedAt,
+        office: upload.documentKind === 'office',
+      });
     },
 
     /** Looks an upload up by its secret token. Expired or purged uploads count as missing. */
