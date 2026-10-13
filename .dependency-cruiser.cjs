@@ -50,7 +50,8 @@ module.exports = {
     {
       name: 'agent-and-api-are-independent',
       severity: 'error',
-      comment: 'The shop-PC agent and the API talk over the wire; they share only packages/contracts.',
+      comment:
+        'The shop-PC agent and the API talk over the wire; they share only packages/contracts.',
       from: { path: '^apps/agent/' },
       to: { path: '^apps/(api|web)/' },
     },
