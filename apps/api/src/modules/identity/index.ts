@@ -56,6 +56,7 @@ export function createIdentity(deps: {
     users: {
       create: auth.createUser,
       findByEmail: auth.findUserByEmail,
+      setPassword: auth.setPassword,
     },
     sessions: { purgeExpired: sessions.purgeExpired },
     revokeAllSessions: auth.revokeAllSessions,

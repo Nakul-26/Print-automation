@@ -76,6 +76,13 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     db,
     audit,
     requireAuth,
+    accounts: {
+      findUserByEmail: identity.users.findByEmail,
+      createUser: identity.users.create,
+      setPassword: identity.users.setPassword,
+    },
+    // Someone removed from a shop loses their live connections at once.
+    onMemberRemoved: (userId) => realtime.disconnectUser(userId),
     // A suspended shop loses its live connections at once: the owner's dashboards and the printing app.
     onSuspended: (shopId) => {
       realtime.disconnectRoom(`shop:${shopId}`);

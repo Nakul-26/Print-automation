@@ -74,6 +74,19 @@ is behind your email login before it even reaches the app.
    is never backed up.)
 4. **Do the restore drill now**, before real data exists: `docs/runbook.md` → "Restore drill".
 
+### Who signs in where
+
+| Who            | Address                    | Account                                                  |
+| -------------- | -------------------------- | -------------------------------------------------------- |
+| Student        | `/s/<shop-code>` (QR code) | none                                                     |
+| Shop owner     | `/owner`                   | made on `/apply`, then approved by a platform admin      |
+| Shop staff     | `/owner` (same page)       | added by the owner: dashboard → **Staff**                |
+| Platform admin | `/admin`                   | created on the server with `create-admin` (step 2 above) |
+
+Staff see the queue and can Print, Reject and record payments. Only the owner changes prices, printers
+and staff. A staff member's password is generated and shown once; the owner can issue a new one or
+remove them at any time (ADR 0013).
+
 ## 4. Staging
 
 Make a second Dokploy Compose application `print-staging` from the same repository and compose file,

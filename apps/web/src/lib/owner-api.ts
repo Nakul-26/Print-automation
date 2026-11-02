@@ -5,6 +5,10 @@ import {
   OwnerOrder,
   OwnerQueueResponse,
   OwnerSummary,
+  AddStaffResponse,
+  ResetStaffPasswordResponse,
+  StaffListResponse,
+  type AddStaffBody,
   ShopDetail,
   ShopListResponse,
   type OrderActionBody,
@@ -78,3 +82,34 @@ export const ownerApi = {
 
 export const isUnauthenticated = (err: unknown): boolean =>
   err instanceof ApiError && err.status === 401;
+
+/** The owner's staff list: who can sign in to the shop's queue. */
+export const staffApi = {
+  list: async (shopId: string) =>
+    (await request(StaffListResponse, `/owner/shops/${shopId}/staff`)).members,
+
+  add: (shopId: string, body: AddStaffBody) =>
+    request(AddStaffResponse, `/owner/shops/${shopId}/staff`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  resetPassword: async (shopId: string, userId: string) =>
+    (
+      await request(
+        ResetStaffPasswordResponse,
+        `/owner/shops/${shopId}/staff/${userId}/reset-password`,
+        { method: 'POST' },
+      )
+    ).password,
+
+  remove: async (shopId: string, userId: string): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/owner/shops/${shopId}/staff/${userId}`, { method: 'DELETE' });
+    } catch {
+      throw new ApiError(0, 'network', 'No connection. Check your internet and try again.');
+    }
+    if (!res.ok) throw await readError(res);
+  },
+};

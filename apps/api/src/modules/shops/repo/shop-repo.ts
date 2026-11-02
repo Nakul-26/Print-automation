@@ -23,6 +23,15 @@ export interface AdminShopRecord extends ShopRecord {
   owner: { name: string; email: string } | null;
 }
 
+export interface ShopMemberRecord {
+  userId: string;
+  name: string;
+  email: string;
+  platformRole: 'user' | 'platform_admin';
+  role: ShopRole;
+  since: Date;
+}
+
 export interface MembershipRecord {
   role: ShopRole;
   shop: ShopRecord;
@@ -164,6 +173,41 @@ export function createShopRepo(db: Db) {
         create: { shopId, userId, role },
         update: { role },
       });
+    },
+
+    /** Everyone who can sign in to the shop, owners first. */
+    async listMembers(shopId: string): Promise<ShopMemberRecord[]> {
+      const rows = await db.shopMember.findMany({
+        where: { shopId },
+        select: {
+          role: true,
+          createdAt: true,
+          user: { select: { id: true, name: true, email: true, platformRole: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      const members = rows.map((r) => ({
+        userId: r.user.id,
+        name: r.user.name,
+        email: r.user.email,
+        platformRole: r.user.platformRole,
+        role: r.role,
+        since: r.createdAt,
+      }));
+      return [
+        ...members.filter((m) => m.role === 'owner'),
+        ...members.filter((m) => m.role !== 'owner'),
+      ];
+    },
+
+    async removeMember(shopId: string, userId: string): Promise<boolean> {
+      const { count } = await db.shopMember.deleteMany({ where: { shopId, userId } });
+      return count === 1;
+    },
+
+    /** How many shops a user belongs to. */
+    countMemberships(userId: string): Promise<number> {
+      return db.shopMember.count({ where: { userId } });
     },
 
     /** Every shop the user belongs to, with their role. */

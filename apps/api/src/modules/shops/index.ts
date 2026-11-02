@@ -4,20 +4,24 @@ import type { Audit } from '../audit/index.js';
 import { requireShopAccess } from './http/tenant.js';
 import { createOwnerShopsRouter } from './http/routes.js';
 import { createShopRepo } from './repo/shop-repo.js';
-import { createShopService } from './service/shop-service.js';
+import { createShopService, type AccountsPort } from './service/shop-service.js';
 
 /** Public API of the shops module: shops, membership, and tenant access control. */
 export function createShops(deps: {
   db: Db;
   audit: Audit;
   requireAuth: RequestHandler;
+  accounts: AccountsPort;
   onSuspended?: (shopId: string) => void;
+  onMemberRemoved?: (userId: string) => void;
 }) {
   const repo = createShopRepo(deps.db);
   const service = createShopService({
     repo,
     audit: deps.audit,
+    accounts: deps.accounts,
     ...(deps.onSuspended ? { onSuspended: deps.onSuspended } : {}),
+    ...(deps.onMemberRemoved ? { onMemberRemoved: deps.onMemberRemoved } : {}),
   });
   const shopAccess = requireShopAccess(repo);
 
@@ -48,7 +52,7 @@ export function createShops(deps: {
   };
 }
 
-export type { ShopAction } from './service/shop-service.js';
+export type { AccountsPort, ShopAction } from './service/shop-service.js';
 export type { AdminShopRecord, ShopRecord } from './repo/shop-repo.js';
 
 export type Shops = ReturnType<typeof createShops>;

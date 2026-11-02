@@ -53,5 +53,5 @@ identity, pricing, storage/order/printing usage), like orders and printing do.
 
 - No email: approval, rejection and suspension are not notified (planned with Phase 11 notifications).
   The owner sees the state on their dashboard.
-- Staff accounts and invitations (shop members other than the owner) are still added by CLI.
+- Staff accounts: done later, see ADR 0013 (the owner adds staff from the dashboard).
 - "Reject" an application is a suspension; there is no delete.

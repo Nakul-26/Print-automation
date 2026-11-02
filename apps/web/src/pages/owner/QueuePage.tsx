@@ -13,6 +13,7 @@ import { TodaySummary } from '../../components/owner/TodaySummary';
 import { OrderCard } from '../../components/owner/OrderCard';
 import { PrintingPanel } from '../../components/owner/PrintingPanel';
 import { RatesPanel } from '../../components/owner/RatesPanel';
+import { StaffPanel } from '../../components/owner/StaffPanel';
 import { QrPanel } from '../../components/owner/QrPanel';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { ApiError } from '../../lib/api';
@@ -40,6 +41,7 @@ export function QueuePage() {
   const [showQr, setShowQr] = useState(false);
   const [showPrinting, setShowPrinting] = useState(false);
   const [showRates, setShowRates] = useState(false);
+  const [showStaff, setShowStaff] = useState(false);
   const [printing, setPrinting] = useState<PrintingStatus | null>(null);
   const [sound, setSound] = useState(soundEnabled);
   const [, setTick] = useState(0);
@@ -234,6 +236,15 @@ export function QueuePage() {
             >
               Prices
             </Button>
+            {shop?.role === 'owner' && (
+              <Button
+                variant="secondary"
+                className="min-h-10 px-4 text-sm"
+                onClick={() => setShowStaff(true)}
+              >
+                Staff
+              </Button>
+            )}
             <Button
               variant="secondary"
               className="min-h-10 px-4 text-sm"
@@ -335,6 +346,9 @@ export function QueuePage() {
           canEdit={shop.role === 'owner'}
           onClose={() => setShowRates(false)}
         />
+      )}
+      {showStaff && shop?.role === 'owner' && (
+        <StaffPanel shopId={shopId} onClose={() => setShowStaff(false)} />
       )}
       {showPrinting && shop && (
         <PrintingPanel

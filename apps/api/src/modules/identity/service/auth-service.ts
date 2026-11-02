@@ -50,6 +50,20 @@ export function createAuthService(deps: {
       });
     },
 
+    /** Replaces a user's password and signs them out everywhere. */
+    async setPassword(userId: string, password: string): Promise<void> {
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        throw new HttpError(
+          400,
+          `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+          'weak_password',
+        );
+      }
+      await repo.setPasswordHash(userId, await hashPassword(password));
+      await sessions.revokeAllForUser(userId);
+      deps.onSessionEnded?.(userId);
+    },
+
     findUserByEmail(email: string): Promise<UserRecord | null> {
       return repo.findUserByEmail(email.trim().toLowerCase());
     },

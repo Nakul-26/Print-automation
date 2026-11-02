@@ -48,3 +48,17 @@ queries live in the orders repo (`statsByShop`, `dailyStats`, `methodTotals`, `r
 - Online payments (UPI/gateway), refunds, settlement: Phase 11.
 - Exports (CSV), date-range pickers, per-shop timezone windows in the admin.
 - Old orders keep no payment info (the columns are nullable); nothing is back-filled.
+
+## Staff accounts (added the same day)
+
+- The owner manages staff from the dashboard (**Staff** button, owner only):
+  `GET|POST /owner/shops/:id/staff`, `DELETE /owner/shops/:id/staff/:userId`,
+  `POST /owner/shops/:id/staff/:userId/reset-password`. Staff get 403 on all of these.
+- A new person gets an account with a generated 16-character password, returned once and never logged.
+  If the email already has an account, the person is linked to the shop and keeps their own password.
+- Removing staff takes effect immediately (membership is checked on every request) and closes their
+  live connections. The owner cannot be removed.
+- **Password reset is limited to people who work at this shop and nowhere else**, and never for platform
+  admins: otherwise one shop's owner could lock out or take over an account used at another shop
+  (409 `shared_account`). A reset signs the person out everywhere.
+- Audit: `shop.staff_added`, `shop.staff_removed`, `shop.staff_password_reset` (no passwords, no emails).
