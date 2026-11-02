@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Email } from './identity.js';
 import { OrderStatus } from './order.js';
-import { PaymentMethod, PaymentTotals } from './owner-orders.js';
+import { PaymentTotals } from './owner-orders.js';
 import { ShopSlug, ShopStatus } from './shops.js';
 
 /** What a new shop owner fills in on the public sign-up page. */
@@ -34,9 +34,12 @@ export const ShopStats = z.object({
   printed: z.number().int(),
   rejected: z.number().int(),
   pages: z.number().int(),
+  /** Online money received (refunds taken off). */
   collectedPaise: z.number().int(),
-  unpaidCount: z.number().int(),
-  unpaidPaise: z.number().int(),
+  /** Printed orders paid at the counter. */
+  counterCount: z.number().int(),
+  counterPaise: z.number().int(),
+  refundFailed: z.number().int(),
   lastOrderAt: z.string().nullable(),
 });
 export type ShopStats = z.infer<typeof ShopStats>;
@@ -63,6 +66,11 @@ export const AdminShop = z.object({
   printingLastSeenAt: z.string().nullable(),
   /** The last 30 days, including today. */
   stats30: ShopStats,
+  /** Online payment set-up of this shop (the keys themselves are never shown). */
+  onlinePayments: z.object({
+    enabled: z.boolean(),
+    mode: z.enum(['test', 'live']).nullable(),
+  }),
   /** The platform admin's private notes about this shop. */
   adminNotes: z.string(),
   flags: ShopFlags,
@@ -128,7 +136,8 @@ export const AdminRecentOrder = z.object({
   queueNumber: z.string(),
   status: OrderStatus,
   amountPaise: z.number().int(),
-  paymentMethod: PaymentMethod.nullable(),
+  /** How it was paid online (upi, card, ...); null for the counter. */
+  paymentMethod: z.string().nullable(),
   createdAt: z.string(),
 });
 export type AdminRecentOrder = z.infer<typeof AdminRecentOrder>;
@@ -145,7 +154,13 @@ export type AdminShopDetail = z.infer<typeof AdminShopDetail>;
 export const AdminAttention = z.object({
   shopId: z.uuid(),
   shopName: z.string(),
-  kind: z.enum(['waiting_approval', 'printing_offline', 'unpaid', 'storage_near_cap', 'no_orders']),
+  kind: z.enum([
+    'waiting_approval',
+    'printing_offline',
+    'refund_failed',
+    'storage_near_cap',
+    'no_orders',
+  ]),
   detail: z.string(),
 });
 export type AdminAttention = z.infer<typeof AdminAttention>;

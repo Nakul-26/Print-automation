@@ -4,6 +4,8 @@ import {
   type EstimateItem,
   type EstimateRequest,
   type EstimateResponse,
+  type CheckoutPayload,
+  MIN_ONLINE_PAYMENT_PAISE,
   type OrderActionBody,
   type OrderItemInput,
   type OrderPrintState,
@@ -56,6 +58,25 @@ export interface PrintingPort {
   statesFor(shopId: string, orderIds: string[]): Promise<Map<string, OrderPrintState>>;
 }
 
+/** What orders needs from the payments module (wired in the composition root). */
+export interface PaymentsPort {
+  /** True when the shop has online payment switched on. */
+  isEnabled(shopId: string): Promise<boolean>;
+  /** Opens a payment with the shop's own gateway account. Nothing is stored yet. */
+  prepare(input: {
+    shopId: string;
+    shopName: string;
+    amountPaise: number;
+    currency: string;
+    receipt: string;
+    prefillName: string | null;
+  }): Promise<CheckoutPayload>;
+  /** Stores the payment against the order once the order exists. */
+  attach(input: { orderId: string; shopId: string; checkout: CheckoutPayload }): Promise<void>;
+  /** Gives the student their money back for an order that ended without being printed. Safe to repeat. */
+  requestRefund(orderId: string): Promise<void>;
+}
+
 export interface OrderServiceDeps {
   repo: OrderRepo;
   storage: StorageDriver;
@@ -66,6 +87,7 @@ export interface OrderServiceDeps {
   botCheck: BotCheck;
   realtime: Realtime;
   printing: PrintingPort;
+  payments: PaymentsPort;
   findShopBySlug: (slug: string) => Promise<ShopInfo | null>;
   findShopById: (id: string) => Promise<ShopInfo | null>;
   getRateTable: (shopId: string) => Promise<RateTable>;
@@ -199,6 +221,30 @@ export function createOrderService(deps: OrderServiceDeps) {
     deps.realtime.emit(`order:${order.lookupTokenHash}`, REALTIME.orderChanged);
   }
 
+  function paymentContext(order: OrderRecord) {
+    return {
+      orderId: order.id,
+      shopId: order.shopId,
+      queueNumber: order.queueNumber,
+      status: order.status,
+      paymentState: order.paymentState,
+      amountPaise: order.estimatedAmountPaise,
+      currency: order.currency,
+      customerName: order.customerName,
+      createdAt: order.createdAt,
+    };
+  }
+
+  /** Orders that ended without being printed give a paid student their money back. */
+  async function refundIfPaid(orders: { id: string; paymentState: string }[]): Promise<void> {
+    for (const order of orders) {
+      if (order.paymentState !== 'paid') continue;
+      await deps.payments.requestRefund(order.id).catch((err) => {
+        logger.error({ err, orderId: order.id }, 'could not start a refund');
+      });
+    }
+  }
+
   function toOwnerView(order: OrderRecord, print: OrderPrintState | null = null): OwnerOrder {
     return {
       id: order.id,
@@ -220,11 +266,14 @@ export function createOrderService(deps: OrderServiceDeps) {
       finalAmountPaise: order.finalAmountPaise,
       currency: order.currency,
       payment:
-        order.paymentMethod && order.paidAt
+        order.paymentState === 'paid' ||
+        order.paymentState === 'refunded' ||
+        order.paymentState === 'refund_failed'
           ? {
+              state: order.paymentState,
               method: order.paymentMethod,
               amountPaise: order.paidAmountPaise ?? 0,
-              paidAt: order.paidAt.toISOString(),
+              paidAt: order.paidAt?.toISOString() ?? null,
             }
           : null,
       print,
@@ -253,6 +302,11 @@ export function createOrderService(deps: OrderServiceDeps) {
       totalPaise: order.estimatedAmountPaise,
       finalAmountPaise: order.finalAmountPaise,
       currency: order.currency,
+      payment: {
+        state: order.paymentState,
+        amountPaise: order.paidAmountPaise ?? order.estimatedAmountPaise,
+        method: order.paymentMethod,
+      },
       rejectionReason: order.rejectionReason,
       aheadCount,
       createdAt: order.createdAt.toISOString(),
@@ -279,6 +333,7 @@ export function createOrderService(deps: OrderServiceDeps) {
           maxItemsPerOrder: 10,
           retentionHours: deps.retentionHours,
         },
+        onlinePayments: await deps.payments.isEnabled(shop.id),
         turnstileSiteKey: deps.botCheck.siteKey,
       };
     },
@@ -352,7 +407,7 @@ export function createOrderService(deps: OrderServiceDeps) {
       slug: string,
       request: CreateOrderRequest,
       meta: { ip?: string | undefined },
-    ): Promise<{ lookupToken: string; order: OrderView }> {
+    ): Promise<{ lookupToken: string; order: OrderView; checkout: CheckoutPayload | null }> {
       const shop = await activeShop(slug);
 
       if (!(await deps.botCheck.verify(request.turnstileToken, meta.ip))) {
@@ -374,6 +429,29 @@ export function createOrderService(deps: OrderServiceDeps) {
       const expiresAt = new Date(createdAt.getTime() + deps.retentionHours * 3_600_000);
       const lookupToken = randomBytes(24).toString('base64url');
 
+      // Online payment is opened with the shop's gateway first, so a failure leaves nothing behind.
+      let checkout: CheckoutPayload | null = null;
+      if (request.payment === 'online') {
+        if (
+          total.totalPaise < MIN_ONLINE_PAYMENT_PAISE ||
+          !(await deps.payments.isEnabled(shop.id))
+        ) {
+          throw new HttpError(
+            409,
+            'Online payment is not available for this order. Choose to pay at the counter.',
+            'online_payment_unavailable',
+          );
+        }
+        checkout = await deps.payments.prepare({
+          shopId: shop.id,
+          shopName: shop.name,
+          amountPaise: total.totalPaise,
+          currency: shop.currency,
+          receipt: `ord-${lookupToken.slice(0, 12)}`,
+          prefillName: request.customerName ?? null,
+        });
+      }
+
       let order: OrderRecord;
       try {
         order = await repo.createWithQueueNumber({
@@ -385,6 +463,7 @@ export function createOrderService(deps: OrderServiceDeps) {
           currency: shop.currency,
           rateSnapshot: table,
           expiresAt,
+          ...(checkout ? { paymentState: 'awaiting' as const } : {}),
           items: resolved.map((r) => ({
             uploadId: r.upload.id,
             sourceKey: r.upload.normalizedKey,
@@ -414,6 +493,17 @@ export function createOrderService(deps: OrderServiceDeps) {
         expiresAt,
       );
       await queue.enqueue(PREPARE_ORDER_JOB, { orderId: order.id });
+      if (checkout) {
+        try {
+          await deps.payments.attach({ orderId: order.id, shopId: shop.id, checkout });
+        } catch (err) {
+          // Could not record the payment: fall back to paying at the counter rather than losing the order.
+          logger.error({ err, orderId: order.id }, 'could not attach the online payment');
+          const fallback = await repo.setPaymentState(order.id, ['awaiting'], { state: 'none' });
+          if (fallback) order = fallback;
+          checkout = null;
+        }
+      }
       await audit.record({
         actorType: 'anonymous',
         shopId: shop.id,
@@ -424,11 +514,16 @@ export function createOrderService(deps: OrderServiceDeps) {
           queueNumber: order.queueNumber,
           totalPaise: total.totalPaise,
           items: resolved.length,
+          payment: checkout ? 'online' : 'counter',
         },
       });
 
       announce(order);
-      return { lookupToken, order: toView(order, shop.name, await repo.aheadCount(order)) };
+      return {
+        lookupToken,
+        order: toView(order, shop.name, await repo.aheadCount(order)),
+        checkout,
+      };
     },
 
     async getByToken(token: string): Promise<OrderView> {
@@ -448,6 +543,7 @@ export function createOrderService(deps: OrderServiceDeps) {
         new Date(at.getTime() - stuckAfterMinutes * 60_000),
       );
       [...expired, ...failed].forEach(announce);
+      await refundIfPaid([...expired, ...failed]);
 
       let purgedOrders = 0;
       let bytes = 0;
@@ -469,6 +565,59 @@ export function createOrderService(deps: OrderServiceDeps) {
         if (batch.length < 100) break;
       }
       return { expired: expired.length, failed: failed.length, purgedOrders, bytes };
+    },
+
+    /**
+     * What the payments module needs to know and change about an order. Every change is conditional
+     * on the payment still being in the expected state, so a late or repeated message does nothing.
+     */
+    paymentSync: {
+      async contextByToken(token: string) {
+        const order = await repo.findByLookupHash(hashToken(token));
+        return order ? paymentContext(order) : null;
+      },
+      async contextById(orderId: string) {
+        const order = await repo.findById(orderId);
+        return order ? paymentContext(order) : null;
+      },
+      /** The money arrived: the order becomes visible to the shop. */
+      async markPaid(
+        orderId: string,
+        paid: { method: string | null; amountPaise: number; at: Date },
+      ): Promise<boolean> {
+        const updated = await repo.setPaymentState(orderId, ['awaiting'], {
+          state: 'paid',
+          method: paid.method,
+          paidAmountPaise: paid.amountPaise,
+          paidAt: paid.at,
+        });
+        if (!updated) return false;
+        announce(updated);
+        return true;
+      },
+      /** The student chose to pay at the counter instead. */
+      async switchToCounter(orderId: string): Promise<boolean> {
+        const updated = await repo.setPaymentState(orderId, ['awaiting'], { state: 'none' });
+        if (!updated) return false;
+        announce(updated);
+        return true;
+      },
+      /** The payment never arrived in time, so the order is closed. */
+      async expireUnpaid(orderId: string): Promise<boolean> {
+        const updated = await repo.expireUnpaid(orderId, 'Payment was not completed in time');
+        if (!updated) return false;
+        announce(updated);
+        return true;
+      },
+      /** The outcome of a refund. A refund that could not be made stays visible to the shop. */
+      async recordRefund(orderId: string, outcome: 'refunded' | 'refund_failed'): Promise<boolean> {
+        const updated = await repo.setPaymentState(orderId, ['paid', 'refund_failed'], {
+          state: outcome,
+        });
+        if (!updated) return false;
+        announce(updated);
+        return true;
+      },
     },
 
     /** Storage accounting for the print files the orders module holds. */
@@ -522,6 +671,7 @@ export function createOrderService(deps: OrderServiceDeps) {
         reason,
       );
       refs.forEach(announce);
+      await refundIfPaid(refs.filter((r) => r.becameExpired));
       return { count: orders.length, bytes };
     },
 
@@ -548,7 +698,13 @@ export function createOrderService(deps: OrderServiceDeps) {
       if (body.action === 'retry_print' || body.action === 'print_manually') {
         return this.adjustPrinting(tenant, order, body.action);
       }
-      if (body.action === 'record_payment') return this.recordPayment(tenant, order, body);
+      if (order.paymentState === 'awaiting') {
+        throw new HttpError(
+          409,
+          'This order is still waiting for its online payment.',
+          'awaiting_payment',
+        );
+      }
 
       const target = { print: 'printing', reject: 'rejected', complete: 'completed' }[
         body.action
@@ -569,7 +725,11 @@ export function createOrderService(deps: OrderServiceDeps) {
         ...(body.action === 'reject' ? { rejectionReason: body.reason } : {}),
         ...(body.action === 'complete'
           ? {
-              finalAmountPaise: body.finalAmountPaise ?? order.estimatedAmountPaise,
+              // A paid order is settled for exactly what was paid; the shop cannot change it.
+              finalAmountPaise:
+                order.paymentState === 'paid'
+                  ? (order.paidAmountPaise ?? order.estimatedAmountPaise)
+                  : (body.finalAmountPaise ?? order.estimatedAmountPaise),
               completedAt: now(),
             }
           : {}),
@@ -601,38 +761,7 @@ export function createOrderService(deps: OrderServiceDeps) {
       } else {
         await deps.printing.cancelOrder(orderId).catch(() => undefined);
       }
-      announce(updated);
-      return toOwnerView(updated, await this.printStateOf(tenant.shopId, updated.id));
-    },
-
-    /** The student paid at the counter. Saying it again corrects the method or amount. */
-    async recordPayment(
-      tenant: { shopId: string; userId: string },
-      order: OrderRecord,
-      body: Extract<OrderActionBody, { action: 'record_payment' }>,
-    ): Promise<OwnerOrder> {
-      const amountPaise = body.amountPaise ?? order.finalAmountPaise ?? order.estimatedAmountPaise;
-      const updated = await repo.recordPayment(tenant.shopId, order.id, {
-        method: body.method,
-        amountPaise,
-        at: now(),
-      });
-      if (!updated) {
-        throw new HttpError(
-          409,
-          'This order was rejected or has expired, so no payment can be recorded.',
-          'invalid_transition',
-        );
-      }
-      await audit.record({
-        actorType: 'user',
-        actorId: tenant.userId,
-        shopId: tenant.shopId,
-        action: order.paymentMethod ? 'order.payment_corrected' : 'order.payment_recorded',
-        entity: 'order',
-        entityId: order.id,
-        metadata: { queueNumber: order.queueNumber, method: body.method, amountPaise },
-      });
+      if (body.action === 'reject') await refundIfPaid([updated]);
       announce(updated);
       return toOwnerView(updated, await this.printStateOf(tenant.shopId, updated.id));
     },
@@ -656,8 +785,9 @@ export function createOrderService(deps: OrderServiceDeps) {
         pages: s?.pages ?? 0,
         collectedPaise: s?.collectedPaise ?? 0,
         byMethod: methods,
-        unpaidCount: s?.unpaidCount ?? 0,
-        unpaidPaise: s?.unpaidPaise ?? 0,
+        counterCount: s?.counterCount ?? 0,
+        counterPaise: s?.counterPaise ?? 0,
+        refundFailed: s?.refundFailed ?? 0,
       };
     },
 

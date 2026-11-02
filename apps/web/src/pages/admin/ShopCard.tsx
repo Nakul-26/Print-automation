@@ -102,6 +102,11 @@ export function ShopCard({
       <p className="mt-3 flex flex-wrap gap-x-5 text-sm">
         <Check ok={shop.ratesSet}>Prices set</Check>
         <Check ok={shop.printingPaired}>Printing app linked</Check>
+        <Check ok={shop.onlinePayments.enabled}>
+          {shop.onlinePayments.enabled
+            ? `Online payments (${shop.onlinePayments.mode === 'live' ? 'live' : 'test'})`
+            : 'Online payments off'}
+        </Check>
         {shop.printingPaired && (
           <Check ok={shop.printingOnline}>{shop.printingOnline ? 'Online now' : 'Offline'}</Check>
         )}
@@ -113,8 +118,8 @@ export function ShopCard({
           <span className="text-muted">Last 30 days: </span>
           {shop.stats30.orders} orders · {shop.stats30.pages} pages ·{' '}
           {formatRupees(shop.stats30.collectedPaise)} collected
-          {shop.stats30.unpaidCount > 0 && (
-            <span className="text-magenta"> · {shop.stats30.unpaidCount} unpaid</span>
+          {shop.stats30.refundFailed > 0 && (
+            <span className="text-magenta"> · {shop.stats30.refundFailed} refund(s) failed</span>
           )}
         </p>
       )}

@@ -18,6 +18,11 @@ export const ApiEnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
+  /**
+   * Encrypts the payment keys shops save. Optional: without it the key is derived from SESSION_SECRET,
+   * so changing that secret would make saved keys unreadable. Set this to keep them independent.
+   */
+  PAYMENTS_ENCRYPTION_KEY: z.string().min(32).optional(),
   STORAGE_ROOT: z.string().default('./data'),
   /** Default global storage limit (bytes). Overridable at runtime from platform_settings. */
   STORAGE_MAX_BYTES: z.coerce

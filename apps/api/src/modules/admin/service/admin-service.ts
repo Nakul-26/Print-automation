@@ -64,6 +64,8 @@ export interface AdminPorts {
     ordersByShop: () => Promise<Map<string, { open: number; total: number }>>;
     shopsWithRates: () => Promise<Set<string>>;
     shopsWithPrintingApp: () => Promise<Set<string>>;
+    /** Which shops take online payment (keys are never exposed). */
+    onlinePayments: () => Promise<Map<string, { enabled: boolean; mode: 'test' | 'live' }>>;
     /** Live connection state and last activity of each shop's printing app. */
     printingPresence: () => Promise<Map<string, { online: boolean; lastSeenAt: Date | null }>>;
   };
@@ -93,8 +95,9 @@ export interface PeriodStats {
   rejected: number;
   pages: number;
   collectedPaise: number;
-  unpaidCount: number;
-  unpaidPaise: number;
+  counterCount: number;
+  counterPaise: number;
+  refundFailed: number;
   lastOrderAt: Date | null;
 }
 
@@ -104,8 +107,9 @@ const NO_STATS: PeriodStats = {
   rejected: 0,
   pages: 0,
   collectedPaise: 0,
-  unpaidCount: 0,
-  unpaidPaise: 0,
+  counterCount: 0,
+  counterPaise: 0,
+  refundFailed: 0,
   lastOrderAt: null,
 };
 
@@ -120,7 +124,7 @@ export function createAdminService(deps: {
   const { ports, settings, audit } = deps;
 
   async function viewShops(status?: AdminShopRecord['status']): Promise<AdminShop[]> {
-    const [shops, storage, orders, rates, printing, presence, stats30] = await Promise.all([
+    const [shops, storage, orders, rates, printing, presence, stats30, online] = await Promise.all([
       ports.shops.listForAdmin(status),
       ports.usage.storageByShop(),
       ports.usage.ordersByShop(),
@@ -128,6 +132,7 @@ export function createAdminService(deps: {
       ports.usage.shopsWithPrintingApp(),
       ports.usage.printingPresence(),
       ports.activity.statsByShop(30),
+      ports.usage.onlinePayments(),
     ]);
     return shops.map((s) => {
       const stats = stats30.get(s.id) ?? NO_STATS;
@@ -154,17 +159,20 @@ export function createAdminService(deps: {
           rejected: stats.rejected,
           pages: stats.pages,
           collectedPaise: stats.collectedPaise,
-          unpaidCount: stats.unpaidCount,
-          unpaidPaise: stats.unpaidPaise,
+          counterCount: stats.counterCount,
+          counterPaise: stats.counterPaise,
+          refundFailed: stats.refundFailed,
           lastOrderAt: stats.lastOrderAt?.toISOString() ?? null,
+        },
+        onlinePayments: {
+          enabled: online.get(s.id)?.enabled ?? false,
+          mode: online.get(s.id)?.mode ?? null,
         },
         adminNotes: s.adminNotes,
         flags: s.flags,
       };
     });
   }
-
-  const money = (paise: number): string => `₹${(paise / 100).toFixed(2).replace(/\.00$/, '')}`;
 
   /** Things the platform admin should look at today, most urgent first. */
   function attentionFor(shops: AdminShop[], now: Date): AdminAttention[] {
@@ -180,10 +188,10 @@ export function createAdminService(deps: {
       if (s.printingPaired && !s.printingOnline && s.openOrders > 0) {
         add('printing_offline', `${s.openOrders} order(s) waiting but the printing app is offline`);
       }
-      if (s.stats30.unpaidCount >= 5) {
+      if (s.stats30.refundFailed > 0) {
         add(
-          'unpaid',
-          `${s.stats30.unpaidCount} printed orders (${money(s.stats30.unpaidPaise)}) have no payment recorded`,
+          'refund_failed',
+          `${s.stats30.refundFailed} refund(s) did not go through and need to be sent from the shop's Razorpay dashboard`,
         );
       }
       if (s.storageQuotaBytes && s.storageBytes > s.storageQuotaBytes * 0.8) {

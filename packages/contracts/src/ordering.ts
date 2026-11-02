@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ColorMode, OrderStatus, PaperSize, PrintSettings, Sides } from './order.js';
+import { CheckoutPayload, OrderPaymentView } from './payments.js';
 import { UPLOAD_TOKEN_PATTERN } from './uploads.js';
 
 /** A print setting set the student can submit; custom page selections need a page list. */
@@ -55,6 +56,8 @@ export const PublicShopInfo = z.object({
     maxItemsPerOrder: z.number().int(),
     retentionHours: z.number(),
   }),
+  /** True when the shop has online payment switched on, so the student may choose to pay now. */
+  onlinePayments: z.boolean(),
   /** Cloudflare Turnstile site key; absent when bot checks are disabled. */
   turnstileSiteKey: z.string().nullable(),
 });
@@ -105,6 +108,8 @@ export const CreateOrderRequest = z.object({
     .optional()
     .transform((v) => (v ? v : undefined)),
   items: z.array(OrderItemInput).min(1).max(MAX_ITEMS_PER_ORDER),
+  /** Pay on the website now, or at the counter (the default). */
+  payment: z.enum(['online', 'counter']).default('counter'),
   /** Cloudflare Turnstile response token, required when the site key is configured. */
   turnstileToken: z.string().max(4096).optional(),
 });
@@ -133,6 +138,8 @@ export const OrderView = z.object({
   totalPaise: z.number().int(),
   finalAmountPaise: z.number().int().nullable(),
   currency: z.string(),
+  /** How this order is being paid; `none` means at the counter. */
+  payment: OrderPaymentView,
   rejectionReason: z.string().nullable(),
   /** Orders in front of this one that are still waiting. */
   aheadCount: z.number().int(),
@@ -145,6 +152,8 @@ export const CreateOrderResponse = z.object({
   /** Secret handle to follow the order. Shown only once; keep it in the page URL. */
   lookupToken: z.string(),
   order: OrderView,
+  /** Present when the student chose to pay online: what the payment window needs. */
+  checkout: CheckoutPayload.nullable(),
 });
 export type CreateOrderResponse = z.infer<typeof CreateOrderResponse>;
 

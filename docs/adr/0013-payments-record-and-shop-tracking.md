@@ -1,6 +1,8 @@
 # 0013. Counter payments record and shop tracking
 
-Status: accepted
+Status: accepted. **The payment-recording part is superseded by ADR 0014** (online payments): the
+Cash/UPI/Card buttons and the "unpaid" tracking are gone. The platform-admin tracking and the staff
+accounts below still apply.
 
 ## Decision
 

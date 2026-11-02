@@ -9,7 +9,7 @@ import { DailyBars, MethodSplit, PrintingDot, Tile, ago } from './parts';
 const KIND_LABEL = {
   waiting_approval: 'Waiting for approval',
   printing_offline: 'Printing app offline',
-  unpaid: 'Payments not recorded',
+  refund_failed: 'Refund needs attention',
   storage_near_cap: 'Storage nearly full',
   no_orders: 'No recent orders',
 } as const;
@@ -138,8 +138,8 @@ export function Overview({
                 <th className="px-3 py-2 font-normal">Printing</th>
                 <th className="px-3 py-2 text-right font-normal">Orders</th>
                 <th className="px-3 py-2 text-right font-normal">Pages</th>
-                <th className="px-3 py-2 text-right font-normal">Collected</th>
-                <th className="px-3 py-2 text-right font-normal">Unpaid</th>
+                <th className="px-3 py-2 text-right font-normal">Paid online</th>
+                <th className="px-3 py-2 text-right font-normal">At counter</th>
                 <th className="px-3 py-2 font-normal">Last order</th>
               </tr>
             </thead>
@@ -168,10 +168,8 @@ export function Overview({
                   <td className="px-3 py-2 text-right font-mono">
                     {formatRupees(s.stats30.collectedPaise)}
                   </td>
-                  <td
-                    className={`px-3 py-2 text-right font-mono ${s.stats30.unpaidCount > 0 ? 'text-magenta' : 'text-muted'}`}
-                  >
-                    {s.stats30.unpaidCount}
+                  <td className="px-3 py-2 text-right font-mono text-muted">
+                    {s.stats30.counterCount}
                   </td>
                   <td className="px-3 py-2 text-muted">{ago(s.stats30.lastOrderAt)}</td>
                 </tr>

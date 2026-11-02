@@ -354,6 +354,10 @@ Done (in the repo, verified on the production images locally): least-privilege D
 The shop records how each student paid at the counter (cash, UPI or card) with one tap; a daily summary for the shop; the platform admin gets an overview (today and 30 days, trend charts, payment split, what needs attention), a per-shop table and a shop detail page with private notes (ADR 0013).
 Done and covered by 8 new integration tests. Not done: online payments (still Phase 11), exports, per-shop timezones in the admin windows.
 
+**Phase 9.6: Online payments (added during deployment)**
+Students pay on the website (UPI, cards, net banking) through the shop's own Razorpay account; the money never touches the platform. Pay-at-the-counter stays, with no questions asked. Automatic refunds for orders that end unprinted, late payments refunded, forged confirmations refused, keys stored encrypted (ADR 0014, docs/online-payments.md). Replaces the manual Cash/UPI/Card recording.
+Done and covered by integration tests against a fake gateway. Not verified yet: a real Razorpay test-mode payment end to end (needs the shop's test keys). Not done: webhooks, partial refunds, other providers.
+
 **Phase 10: Pilot fixes (1-2 weeks)**
 Fix usability issues, tune limits and conversion defaults, measure time saved.
 

@@ -3,7 +3,7 @@ import type { AdminAuditEntry, AdminShop, AdminShopDetail } from '@print/contrac
 import { Button, Notice, Spinner } from '../../components/ui';
 import { adminApi } from '../../lib/admin-api';
 import { ApiError } from '../../lib/api';
-import { PAYMENT_LABEL, formatRupees } from '../../lib/format';
+import { formatRupees, paymentMethodLabel } from '../../lib/format';
 import { DailyBars, MethodSplit, Tile, ago } from './parts';
 import { ShopCard } from './ShopCard';
 
@@ -81,13 +81,13 @@ export function ShopDetailView({
             <Tile label="Printed" value={String(detail.shop.stats30.printed)} hint="orders" />
             <Tile label="Pages" value={String(detail.shop.stats30.pages)} hint="printed sides" />
             <Tile
-              label="Collected"
+              label="Paid online"
               value={formatRupees(detail.shop.stats30.collectedPaise)}
-              hint={
-                detail.shop.stats30.unpaidCount > 0
-                  ? `${detail.shop.stats30.unpaidCount} unpaid (${formatRupees(detail.shop.stats30.unpaidPaise)})`
-                  : 'all recorded'
-              }
+              hint={`paid online${
+                detail.shop.stats30.counterCount > 0
+                  ? ` · ${detail.shop.stats30.counterCount} at the counter`
+                  : ''
+              }`}
             />
           </section>
 
@@ -122,7 +122,7 @@ export function ShopDetailView({
                       <span className="font-mono font-medium">{o.queueNumber}</span>
                       <span className="text-muted"> · {STATUS_TEXT[o.status]}</span>
                       {o.paymentMethod && (
-                        <span className="text-muted"> · {PAYMENT_LABEL[o.paymentMethod]}</span>
+                        <span className="text-muted"> · {paymentMethodLabel(o.paymentMethod)}</span>
                       )}
                       <span className="block font-mono text-xs text-muted">{ago(o.createdAt)}</span>
                     </span>

@@ -64,6 +64,8 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN, e.g. https://print.example.com}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (32+ random characters)}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Encrypts the payment keys shops save (optional; see .env.production.example).
+      PAYMENTS_ENCRYPTION_KEY: ${PAYMENTS_ENCRYPTION_KEY:-}
       STORAGE_MAX_BYTES: ${STORAGE_MAX_BYTES:-5368709120}
       RETENTION_HOURS: ${RETENTION_HOURS:-24}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}

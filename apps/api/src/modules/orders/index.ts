@@ -18,11 +18,12 @@ import { createOrderRepo } from './repo/order-repo.js';
 import {
   createOrderService,
   PREPARE_ORDER_JOB,
+  type PaymentsPort,
   type PrintingPort,
   type ShopInfo,
 } from './service/order-service.js';
 
-export type { PrintingPort, ShopInfo };
+export type { PaymentsPort, PrintingPort, ShopInfo };
 
 /** Public API of the orders module: the student's journey from print settings to a queue number. */
 export function createOrders(deps: {
@@ -39,6 +40,7 @@ export function createOrders(deps: {
   botCheck: BotCheck;
   realtime: Realtime;
   printing: PrintingPort;
+  payments: PaymentsPort;
   requireAuth: RequestHandler;
   requireShopAccess: RequestHandler;
   canAccessShop: (shopId: string, userId: string) => Promise<boolean>;
@@ -62,6 +64,7 @@ export function createOrders(deps: {
     botCheck: deps.botCheck,
     realtime: deps.realtime,
     printing: deps.printing,
+    payments: deps.payments,
     findShopBySlug: deps.findShopBySlug,
     findShopById: deps.findShopById,
     getRateTable: deps.getRateTable,
@@ -114,6 +117,7 @@ export function createOrders(deps: {
       printFileUsage: orders.printFileUsage,
       countsByShop: orders.countsByShop,
       activity: orders.activity,
+      paymentSync: orders.paymentSync,
       evictFiles: orders.evictFiles,
       markPrinted: orders.markPrinted,
       touch: orders.touch,

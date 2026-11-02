@@ -1,5 +1,5 @@
 import type { AdminDaily, PaymentTotals } from '@print/contracts';
-import { PAYMENT_LABEL, formatRupees } from '../../lib/format';
+import { formatRupees, paymentMethodLabel } from '../../lib/format';
 
 /** One headline number with a small label. */
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -67,23 +67,30 @@ export function MethodSplit({ rows }: { rows: PaymentTotals[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted">No payments recorded yet.</p>;
   }
-  const tone = { cash: 'bg-ink', upi: 'bg-cyan', card: 'bg-magenta' } as const;
+  const palette = ['bg-cyan', 'bg-magenta', 'bg-ink', 'bg-slip-deep', 'bg-ok'];
+  const known: Record<string, string> = {
+    upi: 'bg-cyan',
+    card: 'bg-magenta',
+    netbanking: 'bg-ink',
+  };
+  const tone = (method: string, index: number): string =>
+    known[method] ?? palette[index % palette.length] ?? 'bg-ink';
   return (
     <div>
       <div className="flex h-3 overflow-hidden rounded-full bg-line" aria-hidden>
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <div
             key={r.method}
-            className={tone[r.method]}
+            className={tone(r.method, i)}
             style={{ width: `${total ? (r.amountPaise / total) * 100 : 0}%` }}
           />
         ))}
       </div>
       <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <li key={r.method}>
-            <span className={`mr-1.5 inline-block size-2.5 rounded-full ${tone[r.method]}`} />
-            {PAYMENT_LABEL[r.method]} {formatRupees(r.amountPaise)}{' '}
+            <span className={`mr-1.5 inline-block size-2.5 rounded-full ${tone(r.method, i)}`} />
+            {paymentMethodLabel(r.method)} {formatRupees(r.amountPaise)}{' '}
             <span className="text-muted">({r.count})</span>
           </li>
         ))}

@@ -14,16 +14,15 @@ export const REALTIME = {
   orderChanged: 'order:changed',
 } as const;
 
-/** How the student paid at the counter. The app only records it; money never passes through. */
-export const PaymentMethod = z.enum(['cash', 'upi', 'card']);
-export type PaymentMethod = z.infer<typeof PaymentMethod>;
-
-export const OrderPayment = z.object({
-  method: PaymentMethod,
+/** An online payment as the shop sees it. Orders paid at the counter have none. */
+export const OwnerOrderPayment = z.object({
+  state: z.enum(['paid', 'refunded', 'refund_failed']),
+  /** upi, card, netbanking, wallet, ... */
+  method: z.string().nullable(),
   amountPaise: z.number().int(),
-  paidAt: z.string(),
+  paidAt: z.string().nullable(),
 });
-export type OrderPayment = z.infer<typeof OrderPayment>;
+export type OwnerOrderPayment = z.infer<typeof OwnerOrderPayment>;
 
 export const OwnerOrderItem = z.object({
   id: z.uuid(),
@@ -48,8 +47,8 @@ export const OwnerOrder = z.object({
   estimatedAmountPaise: z.number().int(),
   finalAmountPaise: z.number().int().nullable(),
   currency: z.string(),
-  /** Filled in when the shop records how the student paid. */
-  payment: OrderPayment.nullable(),
+  /** The online payment, or null when the student pays at the counter. */
+  payment: OwnerOrderPayment.nullable(),
   /** Set once the shop pressed Print and a printing app is involved. */
   print: OrderPrintState.nullable(),
   rejectionReason: z.string().nullable(),
@@ -62,9 +61,9 @@ export type OwnerOrder = z.infer<typeof OwnerOrder>;
 export const OwnerQueueResponse = z.object({ orders: z.array(OwnerOrder) });
 export type OwnerQueueResponse = z.infer<typeof OwnerQueueResponse>;
 
-/** What the shop collected on one day (counted by the day the order was placed). */
+/** Online money received, split by how it was paid. */
 export const PaymentTotals = z.object({
-  method: PaymentMethod,
+  method: z.string(),
   count: z.number().int(),
   amountPaise: z.number().int(),
 });
@@ -78,11 +77,14 @@ export const OwnerSummary = z.object({
   rejected: z.number().int(),
   /** Printed sides (one page printed on one side = 1). */
   pages: z.number().int(),
+  /** Online money received today (refunds taken off). */
   collectedPaise: z.number().int(),
   byMethod: z.array(PaymentTotals),
-  /** Printed orders whose payment has not been recorded yet. */
-  unpaidCount: z.number().int(),
-  unpaidPaise: z.number().int(),
+  /** Printed orders the student pays for at the counter: what is still to collect by hand. */
+  counterCount: z.number().int(),
+  counterPaise: z.number().int(),
+  /** Paid orders whose refund did not go through and needs the shop's attention. */
+  refundFailed: z.number().int(),
 });
 export type OwnerSummary = z.infer<typeof OwnerSummary>;
 
@@ -100,13 +102,6 @@ export const OrderActionBody = z.discriminatedUnion('action', [
     action: z.literal('complete'),
     /** The amount actually collected, if it differs from the estimate. */
     finalAmountPaise: z.number().int().min(0).max(MAX_FINAL_AMOUNT_PAISE).optional(),
-  }),
-  /** The student paid at the counter. Can be corrected later the same way. */
-  z.object({
-    action: z.literal('record_payment'),
-    method: PaymentMethod,
-    /** What was actually collected; defaults to the order's final (or estimated) amount. */
-    amountPaise: z.number().int().min(0).max(MAX_FINAL_AMOUNT_PAISE).optional(),
   }),
 ]);
 export type OrderActionBody = z.infer<typeof OrderActionBody>;

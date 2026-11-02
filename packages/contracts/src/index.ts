@@ -7,4 +7,5 @@ export * from './office.js';
 export * from './ordering.js';
 export * from './owner-orders.js';
 export * from './agent.js';
+export * from './payments.js';
 export * from './admin.js';

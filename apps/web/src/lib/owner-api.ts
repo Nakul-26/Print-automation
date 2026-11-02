@@ -6,9 +6,11 @@ import {
   OwnerQueueResponse,
   OwnerSummary,
   AddStaffResponse,
+  PaymentSettingsView,
   ResetStaffPasswordResponse,
   StaffListResponse,
   type AddStaffBody,
+  type SavePaymentKeysBody,
   ShopDetail,
   ShopListResponse,
   type OrderActionBody,
@@ -112,4 +114,24 @@ export const staffApi = {
     }
     if (!res.ok) throw await readError(res);
   },
+};
+
+/** The owner's online payment set-up: their own Razorpay keys. The secret is never sent back. */
+export const paymentsApi = {
+  get: (shopId: string) => request(PaymentSettingsView, `/owner/shops/${shopId}/payments`),
+
+  saveKeys: (shopId: string, body: SavePaymentKeysBody) =>
+    request(PaymentSettingsView, `/owner/shops/${shopId}/payments/keys`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  setEnabled: (shopId: string, enabled: boolean) =>
+    request(PaymentSettingsView, `/owner/shops/${shopId}/payments/enabled`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
+
+  remove: (shopId: string) =>
+    request(PaymentSettingsView, `/owner/shops/${shopId}/payments/keys`, { method: 'DELETE' }),
 };

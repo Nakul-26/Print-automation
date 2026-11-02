@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import type { EstimateResponse, PublicShopInfo } from '@print/contracts';
+import {
+  MIN_ONLINE_PAYMENT_PAISE,
+  type EstimateResponse,
+  type PublicShopInfo,
+} from '@print/contracts';
 import { FilesStep } from '../components/FilesStep';
 import { ReviewStep } from '../components/ReviewStep';
 import { SettingsStep } from '../components/SettingsStep';
@@ -27,6 +31,7 @@ export function ShopPage() {
   const [captchaNonce, setCaptchaNonce] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [payment, setPayment] = useState<'online' | 'counter'>('online');
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +115,12 @@ export function ShopPage() {
 
   const onToken = useCallback((token: string | null) => setBotToken(token), []);
 
+  // Online payment is only offered when the shop has it on and the amount is large enough.
+  const payOnline =
+    payment === 'online' &&
+    Boolean(shop?.onlinePayments) &&
+    (estimate?.totalPaise ?? 0) >= MIN_ONLINE_PAYMENT_PAISE;
+
   const submit = async () => {
     if (!shop) return;
     setSubmitting(true);
@@ -118,12 +129,13 @@ export function ShopPage() {
       const created = await api.createOrder(slug, {
         ...(name.trim() ? { customerName: name.trim() } : {}),
         items: ready.map((i) => ({ uploadToken: i.token!, settings: i.settings })),
+        payment: payOnline ? 'online' : 'counter',
         ...(botToken ? { turnstileToken: botToken } : {}),
       });
       draft.clear();
       navigate(`/s/${slug}/order/${created.lookupToken}`, {
         replace: true,
-        state: { order: created.order },
+        state: { order: created.order, checkout: created.checkout },
       });
     } catch (err) {
       setSubmitError(
@@ -173,7 +185,11 @@ export function ShopPage() {
       };
     }
     return {
-      label: submitting ? 'Placing order…' : 'Get my queue number',
+      label: submitting
+        ? 'Placing order…'
+        : payOnline
+          ? `Pay ${estimate ? formatRupees(estimate.totalPaise) : ''} and get my queue number`
+          : 'Get my queue number',
       disabled: submitting || !estimate || (needsBotCheck && !botToken),
       onClick: submit,
     };
@@ -224,6 +240,8 @@ export function ShopPage() {
           onToken={onToken}
           nonce={captchaNonce}
           error={submitError}
+          payment={payment}
+          onPayment={setPayment}
         />
       )}
 

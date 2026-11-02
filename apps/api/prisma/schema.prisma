@@ -88,15 +88,17 @@ model Shop {
   createdAt         DateTime   @default(now()) @map("created_at")
   updatedAt         DateTime   @updatedAt @map("updated_at")
 
-  members       ShopMember[]
-  uploads       Upload[]
-  rates         ShopRate[]
-  pricing       ShopPricing?
-  orders        Order[]
-  printerAgents AgentDevice[]
-  agentPairings AgentPairing[]
-  shopPrinters  ShopPrinter[]
-  printJobs     PrintJob[]
+  members         ShopMember[]
+  uploads         Upload[]
+  rates           ShopRate[]
+  pricing         ShopPricing?
+  orders          Order[]
+  printerAgents   AgentDevice[]
+  agentPairings   AgentPairing[]
+  shopPrinters    ShopPrinter[]
+  printJobs       PrintJob[]
+  paymentSettings ShopPaymentSettings?
+  onlinePayments  OnlinePayment[]
 
   @@map("shops")
 }
@@ -206,11 +208,23 @@ model ShopPricing {
   @@map("shop_pricing")
 }
 
-/// How the student paid at the counter. Money never goes through the app.
-enum PaymentMethod {
-  cash
-  upi
-  card
+/// Where an order's payment stands. `none` means the student pays at the counter (nothing is tracked).
+enum PaymentState {
+  none
+  awaiting
+  paid
+  refunded
+  refund_failed
+}
+
+/// The life of one online payment (money moved through the shop's own payment gateway account).
+enum OnlinePaymentStatus {
+  awaiting
+  paid
+  refund_pending
+  refunded
+  refund_failed
+  abandoned
 }
 
 enum OrderStatus {
@@ -225,35 +239,38 @@ enum OrderStatus {
 }
 
 model Order {
-  id                   String         @id @default(uuid()) @db.Uuid
-  shopId               String         @map("shop_id") @db.Uuid
+  id                   String       @id @default(uuid()) @db.Uuid
+  shopId               String       @map("shop_id") @db.Uuid
   /// Queue date in the shop's timezone (YYYY-MM-DD) and the number within that day: "P014".
-  queueDate            String         @map("queue_date")
-  queueNumber          Int            @map("queue_number")
+  queueDate            String       @map("queue_date")
+  queueNumber          Int          @map("queue_number")
   /// Unguessable handle the student uses to follow the order; only its HMAC is stored.
-  lookupTokenHash      String         @unique @map("lookup_token_hash")
-  customerName         String?        @map("customer_name")
-  status               OrderStatus    @default(processing)
-  estimatedAmountPaise Int            @map("estimated_amount_paise")
-  finalAmountPaise     Int?           @map("final_amount_paise")
-  currency             String         @default("INR")
+  lookupTokenHash      String       @unique @map("lookup_token_hash")
+  customerName         String?      @map("customer_name")
+  status               OrderStatus  @default(processing)
+  estimatedAmountPaise Int          @map("estimated_amount_paise")
+  finalAmountPaise     Int?         @map("final_amount_paise")
+  currency             String       @default("INR")
   /// The rates and minimum charge in force when the order was placed.
-  rateSnapshot         Json           @map("rate_snapshot")
-  /// Set when the shop records the payment received at the counter.
-  paymentMethod        PaymentMethod? @map("payment_method")
-  paidAmountPaise      Int?           @map("paid_amount_paise")
-  paidAt               DateTime?      @map("paid_at")
-  rejectionReason      String?        @map("rejection_reason")
-  failureReason        String?        @map("failure_reason")
-  createdAt            DateTime       @default(now()) @map("created_at")
-  updatedAt            DateTime       @updatedAt @map("updated_at")
-  completedAt          DateTime?      @map("completed_at")
+  rateSnapshot         Json         @map("rate_snapshot")
+  /// `none` = pay at the counter. `awaiting` orders are hidden from the shop until the money arrives.
+  paymentState         PaymentState @default(none) @map("payment_state")
+  /// What the student paid with, as reported by the gateway: upi, card, netbanking, wallet, ...
+  paymentMethod        String?      @map("payment_method")
+  paidAmountPaise      Int?         @map("paid_amount_paise")
+  paidAt               DateTime?    @map("paid_at")
+  rejectionReason      String?      @map("rejection_reason")
+  failureReason        String?      @map("failure_reason")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  completedAt          DateTime?    @map("completed_at")
   /// Files are deleted after this time (24 h from order creation).
-  expiresAt            DateTime       @map("expires_at")
-  filesPurgedAt        DateTime?      @map("files_purged_at")
+  expiresAt            DateTime     @map("expires_at")
+  filesPurgedAt        DateTime?    @map("files_purged_at")
 
-  shop  Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  items OrderItem[]
+  shop          Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+  onlinePayment OnlinePayment?
 
   @@unique([shopId, queueDate, queueNumber])
   @@index([shopId, status, createdAt])
@@ -395,4 +412,46 @@ model PrintJob {
   @@index([shopId, status])
   @@index([orderId])
   @@map("print_jobs")
+}
+
+/// A shop's own payment gateway account. The secret is stored encrypted and never sent back to any browser.
+model ShopPaymentSettings {
+  shopId       String   @id @map("shop_id") @db.Uuid
+  provider     String   @default("razorpay")
+  keyId        String   @map("key_id")
+  keySecretEnc String   @map("key_secret_enc")
+  enabled      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@map("shop_payment_settings")
+}
+
+/// One online payment for one order, as seen by the payment gateway.
+model OnlinePayment {
+  id                String              @id @default(uuid()) @db.Uuid
+  orderId           String              @unique @map("order_id") @db.Uuid
+  shopId            String              @map("shop_id") @db.Uuid
+  provider          String
+  providerOrderId   String              @unique @map("provider_order_id")
+  providerPaymentId String?             @map("provider_payment_id")
+  status            OnlinePaymentStatus @default(awaiting)
+  amountPaise       Int                 @map("amount_paise")
+  currency          String
+  method            String?
+  refundId          String?             @map("refund_id")
+  error             String?
+  createdAt         DateTime            @default(now()) @map("created_at")
+  paidAt            DateTime?           @map("paid_at")
+  refundedAt        DateTime?           @map("refunded_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shop  Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([shopId])
+  @@map("online_payments")
 }

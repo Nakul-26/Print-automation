@@ -1,6 +1,6 @@
 import type { PrintSettings } from '@print/contracts';
 import type { Db } from '../../../platform/db/client.js';
-import type { OrderStatus, PaymentMethod } from '../../../generated/prisma/enums.js';
+import type { OrderStatus, PaymentState } from '../../../generated/prisma/enums.js';
 
 export interface OrderItemRecord {
   id: string;
@@ -33,7 +33,8 @@ export interface OrderRecord {
   estimatedAmountPaise: number;
   finalAmountPaise: number | null;
   currency: string;
-  paymentMethod: PaymentMethod | null;
+  paymentState: PaymentState;
+  paymentMethod: string | null;
   paidAmountPaise: number | null;
   paidAt: Date | null;
   rejectionReason: string | null;
@@ -65,6 +66,8 @@ export interface NewOrder {
   currency: string;
   rateSnapshot: unknown;
   expiresAt: Date;
+  /** `awaiting` for an online payment that has not arrived yet (the shop cannot see the order). */
+  paymentState?: PaymentState;
   items: NewOrderItem[];
 }
 
@@ -73,6 +76,13 @@ export interface OrderRef {
   id: string;
   shopId: string;
   lookupTokenHash: string;
+  /** Lets the caller refund an order that ended without being printed. */
+  paymentState: PaymentState;
+}
+
+/** An order whose files were removed, and whether that ended an order that was still open. */
+export interface PurgedRef extends OrderRef {
+  becameExpired: boolean;
 }
 
 /** A period's numbers for one shop, counted by the day the orders were placed (shop-local date). */
@@ -81,9 +91,12 @@ export interface PeriodStats {
   printed: number;
   rejected: number;
   pages: number;
+  /** Online money received, refunds taken off. */
   collectedPaise: number;
-  unpaidCount: number;
-  unpaidPaise: number;
+  /** Printed orders the student pays for at the counter. */
+  counterCount: number;
+  counterPaise: number;
+  refundFailed: number;
   lastOrderAt: Date | null;
 }
 
@@ -97,7 +110,7 @@ export interface DailyStats {
 }
 
 export interface MethodTotals {
-  method: PaymentMethod;
+  method: string;
   count: number;
   amountPaise: number;
 }
@@ -154,6 +167,7 @@ export function createOrderRepo(db: Db) {
               currency: input.currency,
               rateSnapshot: input.rateSnapshot as never,
               expiresAt: input.expiresAt,
+              ...(input.paymentState ? { paymentState: input.paymentState } : {}),
               items: {
                 create: input.items.map((item, position) => ({
                   shopId: input.shopId,
@@ -203,6 +217,7 @@ export function createOrderRepo(db: Db) {
       const rows = await db.order.findMany({
         where: {
           shopId,
+          paymentState: { not: 'awaiting' },
           OR: [
             { status: { in: ['pending', 'accepted', 'printing'] } },
             {
@@ -246,17 +261,30 @@ export function createOrderRepo(db: Db) {
       return count === 1 ? this.findForShop(shopId, id) : null;
     },
 
-    /** Records (or corrects) how the student paid. Only orders the shop actually dealt with can be paid. */
-    async recordPayment(
-      shopId: string,
-      id: string,
-      data: { method: PaymentMethod; amountPaise: number; at: Date },
+    /**
+     * Moves an order's payment from one state to another only if it is still in one of the expected
+     * states, so the browser's confirmation and the background check can never both apply.
+     */
+    async setPaymentState(
+      orderId: string,
+      from: PaymentState[],
+      data: {
+        state: PaymentState;
+        method?: string | null;
+        paidAmountPaise?: number | null;
+        paidAt?: Date | null;
+      },
     ): Promise<OrderRecord | null> {
       const { count } = await db.order.updateMany({
-        where: { id, shopId, status: { in: ['pending', 'accepted', 'printing', 'completed'] } },
-        data: { paymentMethod: data.method, paidAmountPaise: data.amountPaise, paidAt: data.at },
+        where: { id: orderId, paymentState: { in: from } },
+        data: {
+          paymentState: data.state,
+          ...(data.method !== undefined ? { paymentMethod: data.method } : {}),
+          ...(data.paidAmountPaise !== undefined ? { paidAmountPaise: data.paidAmountPaise } : {}),
+          ...(data.paidAt !== undefined ? { paidAt: data.paidAt } : {}),
+        },
       });
-      return count === 1 ? this.findForShop(shopId, id) : null;
+      return count === 1 ? this.findById(orderId) : null;
     },
 
     /** One row of numbers per shop for the period. Shops with no orders are absent. */
@@ -270,8 +298,9 @@ export function createOrderRepo(db: Db) {
           printed: bigint;
           rejected: bigint;
           collected: bigint;
-          unpaid_count: bigint;
-          unpaid_paise: bigint;
+          counter_count: bigint;
+          counter_paise: bigint;
+          refund_failed: bigint;
           last_order_at: Date | null;
         }[]
       >`
@@ -279,19 +308,22 @@ export function createOrderRepo(db: Db) {
                count(*) AS orders,
                count(*) FILTER (WHERE o.status = 'completed') AS printed,
                count(*) FILTER (WHERE o.status = 'rejected') AS rejected,
-               coalesce(sum(o.paid_amount_paise), 0) AS collected,
-               count(*) FILTER (WHERE o.status = 'completed' AND o.payment_method IS NULL) AS unpaid_count,
+               coalesce(sum(o.paid_amount_paise) FILTER (WHERE o.payment_state = 'paid'), 0) AS collected,
+               count(*) FILTER (WHERE o.status = 'completed' AND o.payment_state = 'none') AS counter_count,
                coalesce(sum(coalesce(o.final_amount_paise, o.estimated_amount_paise))
-                 FILTER (WHERE o.status = 'completed' AND o.payment_method IS NULL), 0) AS unpaid_paise,
+                 FILTER (WHERE o.status = 'completed' AND o.payment_state = 'none'), 0) AS counter_paise,
+               count(*) FILTER (WHERE o.payment_state = 'refund_failed') AS refund_failed,
                max(o.created_at) AS last_order_at
         FROM orders o
-        WHERE o.queue_date >= ${from} AND o.queue_date <= ${to}
+        WHERE o.payment_state <> 'awaiting'
+          AND o.queue_date >= ${from} AND o.queue_date <= ${to}
           AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
         GROUP BY o.shop_id`;
       const pages = await db.$queryRaw<{ shop_id: string; pages: bigint }[]>`
         SELECT oi.shop_id, coalesce(sum(oi.printed_sides), 0) AS pages
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE o.status = 'completed' AND o.queue_date >= ${from} AND o.queue_date <= ${to}
+        WHERE o.status = 'completed' AND o.payment_state <> 'awaiting'
+          AND o.queue_date >= ${from} AND o.queue_date <= ${to}
           AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
         GROUP BY oi.shop_id`;
       const pageMap = new Map(pages.map((p) => [p.shop_id, Number(p.pages)]));
@@ -304,8 +336,9 @@ export function createOrderRepo(db: Db) {
             rejected: Number(r.rejected),
             pages: pageMap.get(r.shop_id) ?? 0,
             collectedPaise: Number(r.collected),
-            unpaidCount: Number(r.unpaid_count),
-            unpaidPaise: Number(r.unpaid_paise),
+            counterCount: Number(r.counter_count),
+            counterPaise: Number(r.counter_paise),
+            refundFailed: Number(r.refund_failed),
             lastOrderAt: r.last_order_at,
           },
         ]),
@@ -330,11 +363,12 @@ export function createOrderRepo(db: Db) {
                count(*) AS orders,
                count(*) FILTER (WHERE o.status = 'completed') AS printed,
                count(*) FILTER (WHERE o.status = 'rejected') AS rejected,
-               coalesce(sum(o.paid_amount_paise), 0) AS collected,
+               coalesce(sum(o.paid_amount_paise) FILTER (WHERE o.payment_state = 'paid'), 0) AS collected,
                coalesce(sum((SELECT sum(oi.printed_sides) FROM order_items oi WHERE oi.order_id = o.id))
                  FILTER (WHERE o.status = 'completed'), 0) AS pages
         FROM orders o
-        WHERE o.queue_date >= ${from} AND o.queue_date <= ${to}
+        WHERE o.payment_state <> 'awaiting'
+          AND o.queue_date >= ${from} AND o.queue_date <= ${to}
           AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
         GROUP BY o.queue_date
         ORDER BY o.queue_date`;
@@ -348,19 +382,19 @@ export function createOrderRepo(db: Db) {
       }));
     },
 
-    /** What was collected, split by how it was paid. */
+    /** Online money received and kept, split by how it was paid. */
     async methodTotals(period: Period): Promise<MethodTotals[]> {
       const { from, to = '9999-12-31' } = period;
       const shop = period.shopId ?? null;
-      const rows = await db.$queryRaw<{ method: PaymentMethod; count: bigint; amount: bigint }[]>`
-        SELECT o.payment_method AS method, count(*) AS count,
+      const rows = await db.$queryRaw<{ method: string; count: bigint; amount: bigint }[]>`
+        SELECT coalesce(o.payment_method, 'other') AS method, count(*) AS count,
                coalesce(sum(o.paid_amount_paise), 0) AS amount
         FROM orders o
-        WHERE o.payment_method IS NOT NULL
+        WHERE o.payment_state = 'paid'
           AND o.queue_date >= ${from} AND o.queue_date <= ${to}
           AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
-        GROUP BY o.payment_method
-        ORDER BY o.payment_method`;
+        GROUP BY coalesce(o.payment_method, 'other')
+        ORDER BY 1`;
       return rows.map((r) => ({
         method: r.method,
         count: Number(r.count),
@@ -377,12 +411,12 @@ export function createOrderRepo(db: Db) {
         queueNumber: number;
         status: OrderStatus;
         amountPaise: number;
-        paymentMethod: PaymentMethod | null;
+        paymentMethod: string | null;
         createdAt: Date;
       }[]
     > {
       const rows = await db.order.findMany({
-        where: { shopId },
+        where: { shopId, paymentState: { not: 'awaiting' } },
         orderBy: { createdAt: 'desc' },
         take: limit,
         select: {
@@ -391,6 +425,7 @@ export function createOrderRepo(db: Db) {
           estimatedAmountPaise: true,
           finalAmountPaise: true,
           paidAmountPaise: true,
+          paymentState: true,
           paymentMethod: true,
           createdAt: true,
         },
@@ -399,7 +434,7 @@ export function createOrderRepo(db: Db) {
         queueNumber: r.queueNumber,
         status: r.status,
         amountPaise: r.paidAmountPaise ?? r.finalAmountPaise ?? r.estimatedAmountPaise,
-        paymentMethod: r.paymentMethod,
+        paymentMethod: r.paymentState === 'paid' ? r.paymentMethod : null,
         createdAt: r.createdAt,
       }));
     },
@@ -412,7 +447,7 @@ export function createOrderRepo(db: Db) {
       };
       const refs = await db.order.findMany({
         where,
-        select: { id: true, shopId: true, lookupTokenHash: true },
+        select: { id: true, shopId: true, lookupTokenHash: true, paymentState: true },
       });
       if (refs.length === 0) return [];
       await db.order.updateMany({
@@ -422,12 +457,21 @@ export function createOrderRepo(db: Db) {
       return refs;
     },
 
+    /** An order whose online payment never arrived is closed, so the student is not left waiting. */
+    async expireUnpaid(orderId: string, reason: string): Promise<OrderRecord | null> {
+      const { count } = await db.order.updateMany({
+        where: { id: orderId, paymentState: 'awaiting' },
+        data: { status: 'expired', paymentState: 'none', failureReason: reason },
+      });
+      return count === 1 ? this.findById(orderId) : null;
+    },
+
     /** Orders whose files never finished preparing are failed so students are not left waiting. */
     async failStuckProcessing(createdBefore: Date): Promise<OrderRef[]> {
       const where = { status: 'processing' as OrderStatus, createdAt: { lte: createdBefore } };
       const refs = await db.order.findMany({
         where,
-        select: { id: true, shopId: true, lookupTokenHash: true },
+        select: { id: true, shopId: true, lookupTokenHash: true, paymentState: true },
       });
       if (refs.length === 0) return [];
       await db.order.updateMany({
@@ -462,7 +506,11 @@ export function createOrderRepo(db: Db) {
 
     /** Order counts per shop for the admin's usage view ("open" = still needs the shop's attention). */
     async countsByShop(): Promise<Map<string, { open: number; total: number }>> {
-      const rows = await db.order.groupBy({ by: ['shopId', 'status'], _count: { _all: true } });
+      const rows = await db.order.groupBy({
+        by: ['shopId', 'status'],
+        where: { paymentState: { not: 'awaiting' } },
+        _count: { _all: true },
+      });
       const open = new Set(['pending', 'accepted', 'printing']);
       const result = new Map<string, { open: number; total: number }>();
       for (const row of rows) {
@@ -497,13 +545,23 @@ export function createOrderRepo(db: Db) {
      * Records that an order's print files are gone. If the order was still open it can no longer
      * be printed, so it expires, with the reason for the shop and the student.
      */
-    async markFilesPurged(ids: string[], at: Date, reasonIfOpen: string): Promise<OrderRef[]> {
+    async markFilesPurged(ids: string[], at: Date, reasonIfOpen: string): Promise<PurgedRef[]> {
       if (ids.length === 0) return [];
       const open = ['pending', 'accepted', 'printing'] as OrderStatus[];
-      const refs = await db.order.findMany({
+      const found = await db.order.findMany({
         where: { id: { in: ids } },
-        select: { id: true, shopId: true, lookupTokenHash: true },
+        select: {
+          id: true,
+          shopId: true,
+          lookupTokenHash: true,
+          paymentState: true,
+          status: true,
+        },
       });
+      const refs: PurgedRef[] = found.map(({ status, ...ref }) => ({
+        ...ref,
+        becameExpired: open.includes(status),
+      }));
       await db.$transaction([
         db.orderItem.updateMany({
           where: { orderId: { in: ids } },
@@ -525,6 +583,7 @@ export function createOrderRepo(db: Db) {
           shopId: order.shopId,
           queueDate: order.queueDate,
           queueNumber: { lt: order.queueNumber },
+          paymentState: { not: 'awaiting' },
           status: { in: ['processing', 'pending', 'accepted', 'printing'] },
         },
       });

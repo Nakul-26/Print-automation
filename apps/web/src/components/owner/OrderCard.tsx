@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { OrderActionBody, OwnerOrder, OwnerOrderItem, PaymentMethod } from '@print/contracts';
+import type { OrderActionBody, OwnerOrder, OwnerOrderItem } from '@print/contracts';
 import {
   PAPER_LABEL,
-  PAYMENT_LABEL,
   PRINTER_LABEL,
   SIDES_LABEL,
   formatRupees,
+  paymentMethodLabel,
   timeAgo,
 } from '../../lib/format';
 import { ownerApi } from '../../lib/owner-api';
@@ -89,61 +89,38 @@ function ItemRow({
   );
 }
 
-const METHODS: PaymentMethod[] = ['cash', 'upi', 'card'];
-
-/** One tap records how the student paid at the counter. Tapping another method later corrects it. */
-function PaymentRow({
-  order,
-  busy,
-  onAct,
-}: {
-  order: OwnerOrder;
-  busy: boolean;
-  onAct: (body: OrderActionBody) => void;
-}) {
-  const [changing, setChanging] = useState(false);
-  const due = order.finalAmountPaise ?? order.estimatedAmountPaise;
-
-  if (order.payment && !changing) {
+/** How this order is being paid: online (settled by the gateway) or at the counter. No questions asked. */
+function PaymentLine({ order }: { order: OwnerOrder }) {
+  const p = order.payment;
+  if (!p) {
+    if (['rejected', 'failed', 'expired'].includes(order.status)) return null;
     return (
-      <p className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok">
-        <span>
-          Paid {formatRupees(order.payment.amountPaise)} by {PAYMENT_LABEL[order.payment.method]} ✓
-        </span>
-        <button
-          type="button"
-          className="font-medium underline"
-          disabled={busy}
-          onClick={() => setChanging(true)}
-        >
-          Change
-        </button>
+      <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-sm">
+        Pay at the counter: collect{' '}
+        {formatRupees(order.finalAmountPaise ?? order.estimatedAmountPaise)}.
       </p>
     );
   }
-
-  return (
-    <div className="mt-3">
-      <p className="mb-2 text-sm font-medium">
-        {order.payment ? 'Change how they paid' : `Paid at the counter? ${formatRupees(due)}`}
+  if (p.state === 'paid') {
+    return (
+      <p className="mt-3 rounded-lg bg-ok/10 px-3 py-2 text-sm font-medium text-ok">
+        Paid online {formatRupees(p.amountPaise)} ({paymentMethodLabel(p.method)}) ✓ Nothing to
+        collect.
       </p>
-      <div className="flex gap-2">
-        {METHODS.map((method) => (
-          <Button
-            key={method}
-            variant="secondary"
-            className="min-h-11 flex-1"
-            disabled={busy}
-            onClick={() => {
-              setChanging(false);
-              onAct({ action: 'record_payment', method });
-            }}
-          >
-            {PAYMENT_LABEL[method]}
-          </Button>
-        ))}
-      </div>
-    </div>
+    );
+  }
+  if (p.state === 'refunded') {
+    return (
+      <p className="mt-3 rounded-lg bg-paper px-3 py-2 text-sm">
+        Refunded {formatRupees(p.amountPaise)} to the student.
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="mt-3 rounded-lg bg-magenta-wash px-3 py-2 text-sm text-magenta">
+      The refund of {formatRupees(p.amountPaise)} could not be sent automatically. Please refund it
+      from your Razorpay dashboard.
+    </p>
   );
 }
 
@@ -193,11 +170,13 @@ export function OrderCard({
             {formatRupees(order.finalAmountPaise ?? order.estimatedAmountPaise)}
           </p>
           <p className="font-mono text-xs text-muted">
-            {order.payment
-              ? 'collected'
-              : order.finalAmountPaise === null
-                ? 'estimate'
-                : 'to collect'}{' '}
+            {order.payment?.state === 'paid'
+              ? 'paid online'
+              : order.payment
+                ? 'refunded'
+                : order.finalAmountPaise === null
+                  ? 'estimate'
+                  : 'to collect'}{' '}
             · {timeAgo(order.createdAt)}
           </p>
         </div>
@@ -247,6 +226,12 @@ export function OrderCard({
           }}
         >
           <p className="text-sm font-medium">Why? The student will see this.</p>
+          {order.payment?.state === 'paid' && (
+            <p className="text-sm text-muted">
+              Their online payment of {formatRupees(order.payment.amountPaise)} will be refunded
+              automatically.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {REJECT_REASONS.map((r) => (
               <button
@@ -340,9 +325,7 @@ export function OrderCard({
         </div>
       )}
 
-      {(order.status === 'printing' || order.status === 'completed') && (
-        <PaymentRow order={order} busy={busy} onAct={onAct} />
-      )}
+      <PaymentLine order={order} />
 
       {order.status === 'completed' && order.print?.state === 'done' && (
         <p className="mt-3 text-sm text-ok">Printed automatically ✓</p>

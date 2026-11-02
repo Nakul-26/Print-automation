@@ -5,8 +5,10 @@ import {
   CreateUploadResponse,
   EstimateResponse,
   OrderView,
+  PaymentStatusResponse,
   PublicShopInfo,
   UploadView,
+  type ConfirmPaymentBody,
   type CreateOrderRequest,
   type EstimateRequest,
 } from '@print/contracts';
@@ -83,6 +85,23 @@ export const api = {
     }),
 
   getOrder: (token: string) => request(OrderView, `/orders/${token}`),
+
+  /** Where the order's online payment stands, and what is needed to pay (again). */
+  paymentStatus: (token: string) => request(PaymentStatusResponse, `/orders/${token}/payment`),
+
+  /** The payment window reported success; the server checks the signature before believing it. */
+  confirmPayment: (token: string, body: ConfirmPaymentBody) =>
+    request(PaymentStatusResponse, `/orders/${token}/payment/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Asks the payment provider right now (for a student who closed the window or came back later). */
+  refreshPayment: (token: string) =>
+    request(PaymentStatusResponse, `/orders/${token}/payment/refresh`, { method: 'POST' }),
+
+  payAtCounter: (token: string) =>
+    request(PaymentStatusResponse, `/orders/${token}/payment/counter`, { method: 'POST' }),
 
   /** The exact PDF the shop would print for these settings. */
   printPreview: async (

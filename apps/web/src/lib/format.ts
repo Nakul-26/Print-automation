@@ -4,7 +4,22 @@ export { formatRupees } from '@print/domain';
 
 export const PAPER_LABEL = { A4: 'A4', A3: 'A3' } as const;
 export const COLOR_LABEL = { black_white: 'Black & white', color: 'Colour' } as const;
-export const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', card: 'Card' } as const;
+const METHOD_LABEL: Record<string, string> = {
+  upi: 'UPI',
+  card: 'Card',
+  netbanking: 'Net banking',
+  wallet: 'Wallet',
+  emi: 'EMI',
+  paylater: 'Pay later',
+  bank_transfer: 'Bank transfer',
+  other: 'Other',
+};
+
+/** A payment method as the gateway reports it, in words a person would use. */
+export function paymentMethodLabel(method: string | null | undefined): string {
+  if (!method) return 'Online';
+  return METHOD_LABEL[method] ?? method.charAt(0).toUpperCase() + method.slice(1);
+}
 export const SIDES_LABEL = { single: 'One side', double: 'Both sides' } as const;
 
 export function formatBytes(bytes: number): string {

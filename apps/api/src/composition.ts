@@ -6,6 +6,8 @@ import { createConversion } from './modules/conversion/index.js';
 import { createDocuments } from './modules/documents/index.js';
 import { createIdentity, requireAuth, requirePlatformAdmin } from './modules/identity/index.js';
 import { createOrders } from './modules/orders/index.js';
+import { createPayments } from './modules/payments/index.js';
+import { createRazorpayGateway, type PaymentGateway } from './platform/payments/index.js';
 import { createPricing, DEFAULT_RATES } from './modules/pricing/index.js';
 import { createPrinting } from './modules/printing/index.js';
 import { createRetention } from './modules/retention/index.js';
@@ -23,7 +25,13 @@ import { LocalDiskStorage } from './platform/storage/index.js';
  * Composition root: the only place that wires modules together.
  * Feature modules receive their dependencies here and never construct each other.
  */
-export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
+export function createContainer(deps: {
+  env: ApiEnv;
+  logger: Logger;
+  db: Db;
+  /** Replaced in tests; Razorpay in production. */
+  gateway?: PaymentGateway;
+}) {
   const { env, logger, db } = deps;
 
   const storage = new LocalDiskStorage(env.STORAGE_ROOT);
@@ -127,6 +135,19 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     isShopSuspended: async (shopId) => (await shops.findById(shopId))?.status === 'suspended',
   });
   printingRef.authenticate = printing.authenticateAgent;
+  // Payments and orders also talk through narrow ports; payments is built first, orders second.
+  const payments = createPayments({
+    db,
+    env,
+    logger,
+    queue,
+    audit,
+    gateway: deps.gateway ?? createRazorpayGateway(),
+    requireAuth,
+    requireShopAccess: shops.requireShopAccess,
+    orders: () => ordersRef.current!.api.paymentSync,
+    findShopName: async (shopId) => (await shops.findById(shopId))?.name ?? null,
+  });
   const orders = createOrders({
     db,
     env,
@@ -140,6 +161,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     botCheck,
     realtime,
     printing: printing.api,
+    payments: payments.api,
     requireAuth,
     requireShopAccess: shops.requireShopAccess,
     canAccessShop: shops.canAccess,
@@ -196,6 +218,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
         ordersByShop: orders.api.countsByShop,
         shopsWithRates: pricing.shopsWithRates,
         shopsWithPrintingApp: printing.api.shopsWithPrintingApp,
+        onlinePayments: payments.api.overviewByShop,
         printingPresence: printing.api.presenceByShop,
       },
       activity: orders.api.activity,
@@ -213,6 +236,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
     documents,
     pricing,
     orders,
+    payments,
     conversion,
     storage,
     realtime,

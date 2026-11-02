@@ -7,6 +7,7 @@ import { createApp } from '../src/app.js';
 import { createContainer, type Container } from '../src/composition.js';
 import { createDb, type Db } from '../src/platform/db/client.js';
 import { createLogger } from '../src/platform/observability/logger.js';
+import type { PaymentGateway } from '../src/platform/payments/index.js';
 import { TEST_DATABASE_URL } from './test-env.js';
 
 export const PASSWORD = 'correct-horse-battery';
@@ -30,7 +31,10 @@ export interface TestContext {
   close(): Promise<void>;
 }
 
-export function createTestContext(overrides: Record<string, string> = {}): TestContext {
+export function createTestContext(
+  overrides: Record<string, string> = {},
+  gateway?: PaymentGateway,
+): TestContext {
   const ownsStorage = overrides['STORAGE_ROOT'] === undefined;
   const storageRoot = overrides['STORAGE_ROOT'] ?? mkdtempSync(join(tmpdir(), 'print-test-'));
   const env = loadApiEnv({
@@ -49,7 +53,7 @@ export function createTestContext(overrides: Record<string, string> = {}): TestC
   });
   const logger = createLogger(process.env['TEST_LOG_LEVEL'] ?? 'silent');
   const db = createDb(env.DATABASE_URL);
-  const container = createContainer({ env, logger, db });
+  const container = createContainer({ env, logger, db, ...(gateway ? { gateway } : {}) });
   const app = createApp({ env, logger, container, readinessChecks: [] });
   return {
     app,

@@ -13,6 +13,7 @@ import { TodaySummary } from '../../components/owner/TodaySummary';
 import { OrderCard } from '../../components/owner/OrderCard';
 import { PrintingPanel } from '../../components/owner/PrintingPanel';
 import { RatesPanel } from '../../components/owner/RatesPanel';
+import { PaymentsPanel } from '../../components/owner/PaymentsPanel';
 import { StaffPanel } from '../../components/owner/StaffPanel';
 import { QrPanel } from '../../components/owner/QrPanel';
 import { Button, Notice, Spinner } from '../../components/ui';
@@ -42,6 +43,7 @@ export function QueuePage() {
   const [showPrinting, setShowPrinting] = useState(false);
   const [showRates, setShowRates] = useState(false);
   const [showStaff, setShowStaff] = useState(false);
+  const [showPayments, setShowPayments] = useState(false);
   const [printing, setPrinting] = useState<PrintingStatus | null>(null);
   const [sound, setSound] = useState(soundEnabled);
   const [, setTick] = useState(0);
@@ -119,12 +121,6 @@ export function QueuePage() {
     try {
       const updated = await ownerApi.act(shopId, order.id, body);
       setOrders((list) => list?.map((o) => (o.id === updated.id ? updated : o)) ?? list);
-      if (body.action === 'record_payment') {
-        void ownerApi
-          .summary(shopId)
-          .then(setSummary)
-          .catch(() => undefined);
-      }
     } catch (err) {
       leave(err);
       setCardErrors((e) => ({
@@ -156,15 +152,9 @@ export function QueuePage() {
   const waiting = orders?.filter((o) => WAITING.includes(o.status)).sort(byNumber) ?? [];
   const inProgress = orders?.filter((o) => IN_PROGRESS.includes(o.status)).sort(byNumber) ?? [];
   const preparing = orders?.filter((o) => o.status === 'processing') ?? [];
-  // Printed orders whose payment has not been recorded stay in view until the shop taps how they paid.
-  const unpaid = orders?.filter((o) => o.status === 'completed' && !o.payment).reverse() ?? [];
   const finished =
     orders
-      ?.filter(
-        (o) =>
-          ['rejected', 'failed', 'expired'].includes(o.status) ||
-          (o.status === 'completed' && o.payment),
-      )
+      ?.filter((o) => ['completed', 'rejected', 'failed', 'expired'].includes(o.status))
       .reverse() ?? [];
 
   const card = (order: OwnerOrder) => (
@@ -240,6 +230,15 @@ export function QueuePage() {
               <Button
                 variant="secondary"
                 className="min-h-10 px-4 text-sm"
+                onClick={() => setShowPayments(true)}
+              >
+                Payments
+              </Button>
+            )}
+            {shop?.role === 'owner' && (
+              <Button
+                variant="secondary"
+                className="min-h-10 px-4 text-sm"
                 onClick={() => setShowStaff(true)}
               >
                 Staff
@@ -306,18 +305,6 @@ export function QueuePage() {
               </section>
             )}
 
-            {unpaid.length > 0 && (
-              <section aria-labelledby="unpaid-h">
-                <h2
-                  id="unpaid-h"
-                  className="mb-3 font-mono text-xs uppercase tracking-wide text-muted"
-                >
-                  Printed, payment not recorded · {unpaid.length}
-                </h2>
-                <div className="space-y-4">{unpaid.map(card)}</div>
-              </section>
-            )}
-
             {preparing.length > 0 && (
               <p className="text-sm text-muted">
                 {preparing.length} {preparing.length === 1 ? 'order is' : 'orders are'} being
@@ -346,6 +333,9 @@ export function QueuePage() {
           canEdit={shop.role === 'owner'}
           onClose={() => setShowRates(false)}
         />
+      )}
+      {showPayments && shop?.role === 'owner' && (
+        <PaymentsPanel shopId={shopId} onClose={() => setShowPayments(false)} />
       )}
       {showStaff && shop?.role === 'owner' && (
         <StaffPanel shopId={shopId} onClose={() => setShowStaff(false)} />
