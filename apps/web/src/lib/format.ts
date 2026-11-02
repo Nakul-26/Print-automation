@@ -4,6 +4,7 @@ export { formatRupees } from '@print/domain';
 
 export const PAPER_LABEL = { A4: 'A4', A3: 'A3' } as const;
 export const COLOR_LABEL = { black_white: 'Black & white', color: 'Colour' } as const;
+export const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', card: 'Card' } as const;
 export const SIDES_LABEL = { single: 'One side', double: 'Both sides' } as const;
 
 export function formatBytes(bytes: number): string {

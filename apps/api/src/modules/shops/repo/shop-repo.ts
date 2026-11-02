@@ -15,6 +15,8 @@ export interface ShopRecord {
   storageQuotaBytes: number | null;
   /** Platform-admin switches; a missing key means "on". */
   flags: { officeFiles: boolean };
+  /** The platform admin's private notes about this shop. */
+  adminNotes: string;
 }
 
 export interface AdminShopRecord extends ShopRecord {
@@ -40,7 +42,7 @@ const shopSelect = {
   settings: true,
 } as const;
 
-interface ShopRow extends Omit<ShopRecord, 'storageQuotaBytes' | 'flags'> {
+interface ShopRow extends Omit<ShopRecord, 'storageQuotaBytes' | 'flags' | 'adminNotes'> {
   storageQuotaBytes: bigint | null;
   settings: unknown;
 }
@@ -50,12 +52,18 @@ function flagsOf(settings: unknown): ShopRecord['flags'] {
   return { officeFiles: flags?.officeFiles !== false };
 }
 
+function notesOf(settings: unknown): string {
+  const notes = (settings as { adminNotes?: unknown } | null)?.adminNotes;
+  return typeof notes === 'string' ? notes : '';
+}
+
 function toShop(row: ShopRow): ShopRecord {
   const { storageQuotaBytes, settings, ...rest } = row;
   return {
     ...rest,
     storageQuotaBytes: storageQuotaBytes === null ? null : Number(storageQuotaBytes),
     flags: flagsOf(settings),
+    adminNotes: notesOf(settings),
   };
 }
 
@@ -133,6 +141,19 @@ export function createShopRepo(db: Db) {
               }
             : {}),
         },
+      });
+      return toShop(row);
+    },
+
+    /** Replaces the platform admin's notes; other settings are left alone. */
+    async setAdminNotes(id: string, notes: string): Promise<ShopRecord | null> {
+      const current = await db.shop.findUnique({ where: { id }, select: { settings: true } });
+      if (!current) return null;
+      const settings = { ...((current.settings as object | null) ?? {}), adminNotes: notes };
+      const row = await db.shop.update({
+        where: { id },
+        select: shopSelect,
+        data: { settings: settings as never },
       });
       return toShop(row);
     },

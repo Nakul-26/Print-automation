@@ -4,6 +4,7 @@ import {
   PrintingStatus,
   OwnerOrder,
   OwnerQueueResponse,
+  OwnerSummary,
   ShopDetail,
   ShopListResponse,
   type OrderActionBody,
@@ -34,6 +35,8 @@ export const ownerApi = {
 
   queue: async (shopId: string) =>
     (await request(OwnerQueueResponse, `/owner/shops/${shopId}/orders`)).orders,
+
+  summary: (shopId: string) => request(OwnerSummary, `/owner/shops/${shopId}/summary`),
 
   act: (shopId: string, orderId: string, body: OrderActionBody) =>
     request(OwnerOrder, `/owner/shops/${shopId}/orders/${orderId}/actions`, {

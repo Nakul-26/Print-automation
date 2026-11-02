@@ -152,6 +152,25 @@ export function createShopService(deps: {
       return updated;
     },
 
+    async setAdminNotes(input: {
+      shopId: string;
+      notes: string;
+      actorId: string;
+    }): Promise<ShopRecord> {
+      const updated = await repo.setAdminNotes(input.shopId, input.notes);
+      if (!updated) throw new HttpError(404, 'Shop not found', 'not_found');
+      // The note itself stays out of the activity log; only the fact that it changed is recorded.
+      await audit.record({
+        actorType: 'user',
+        actorId: input.actorId,
+        shopId: updated.id,
+        action: 'shop.notes_updated',
+        entity: 'shop',
+        entityId: updated.id,
+      });
+      return updated;
+    },
+
     listForUser(userId: string): Promise<MembershipRecord[]> {
       return repo.listMembershipsForUser(userId);
     },

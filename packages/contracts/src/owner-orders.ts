@@ -14,6 +14,17 @@ export const REALTIME = {
   orderChanged: 'order:changed',
 } as const;
 
+/** How the student paid at the counter. The app only records it; money never passes through. */
+export const PaymentMethod = z.enum(['cash', 'upi', 'card']);
+export type PaymentMethod = z.infer<typeof PaymentMethod>;
+
+export const OrderPayment = z.object({
+  method: PaymentMethod,
+  amountPaise: z.number().int(),
+  paidAt: z.string(),
+});
+export type OrderPayment = z.infer<typeof OrderPayment>;
+
 export const OwnerOrderItem = z.object({
   id: z.uuid(),
   originalName: z.string(),
@@ -37,6 +48,8 @@ export const OwnerOrder = z.object({
   estimatedAmountPaise: z.number().int(),
   finalAmountPaise: z.number().int().nullable(),
   currency: z.string(),
+  /** Filled in when the shop records how the student paid. */
+  payment: OrderPayment.nullable(),
   /** Set once the shop pressed Print and a printing app is involved. */
   print: OrderPrintState.nullable(),
   rejectionReason: z.string().nullable(),
@@ -48,6 +61,30 @@ export type OwnerOrder = z.infer<typeof OwnerOrder>;
 
 export const OwnerQueueResponse = z.object({ orders: z.array(OwnerOrder) });
 export type OwnerQueueResponse = z.infer<typeof OwnerQueueResponse>;
+
+/** What the shop collected on one day (counted by the day the order was placed). */
+export const PaymentTotals = z.object({
+  method: PaymentMethod,
+  count: z.number().int(),
+  amountPaise: z.number().int(),
+});
+export type PaymentTotals = z.infer<typeof PaymentTotals>;
+
+export const OwnerSummary = z.object({
+  /** The shop's local date, YYYY-MM-DD. */
+  date: z.string(),
+  orders: z.number().int(),
+  printed: z.number().int(),
+  rejected: z.number().int(),
+  /** Printed sides (one page printed on one side = 1). */
+  pages: z.number().int(),
+  collectedPaise: z.number().int(),
+  byMethod: z.array(PaymentTotals),
+  /** Printed orders whose payment has not been recorded yet. */
+  unpaidCount: z.number().int(),
+  unpaidPaise: z.number().int(),
+});
+export type OwnerSummary = z.infer<typeof OwnerSummary>;
 
 export const MAX_FINAL_AMOUNT_PAISE = 10_000_000;
 
@@ -63,6 +100,13 @@ export const OrderActionBody = z.discriminatedUnion('action', [
     action: z.literal('complete'),
     /** The amount actually collected, if it differs from the estimate. */
     finalAmountPaise: z.number().int().min(0).max(MAX_FINAL_AMOUNT_PAISE).optional(),
+  }),
+  /** The student paid at the counter. Can be corrected later the same way. */
+  z.object({
+    action: z.literal('record_payment'),
+    method: PaymentMethod,
+    /** What was actually collected; defaults to the order's final (or estimated) amount. */
+    amountPaise: z.number().int().min(0).max(MAX_FINAL_AMOUNT_PAISE).optional(),
   }),
 ]);
 export type OrderActionBody = z.infer<typeof OrderActionBody>;

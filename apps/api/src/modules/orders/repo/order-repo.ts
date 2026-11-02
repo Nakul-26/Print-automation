@@ -1,6 +1,6 @@
 import type { PrintSettings } from '@print/contracts';
 import type { Db } from '../../../platform/db/client.js';
-import type { OrderStatus } from '../../../generated/prisma/enums.js';
+import type { OrderStatus, PaymentMethod } from '../../../generated/prisma/enums.js';
 
 export interface OrderItemRecord {
   id: string;
@@ -33,6 +33,9 @@ export interface OrderRecord {
   estimatedAmountPaise: number;
   finalAmountPaise: number | null;
   currency: string;
+  paymentMethod: PaymentMethod | null;
+  paidAmountPaise: number | null;
+  paidAt: Date | null;
   rejectionReason: string | null;
   failureReason: string | null;
   createdAt: Date;
@@ -70,6 +73,42 @@ export interface OrderRef {
   id: string;
   shopId: string;
   lookupTokenHash: string;
+}
+
+/** A period's numbers for one shop, counted by the day the orders were placed (shop-local date). */
+export interface PeriodStats {
+  orders: number;
+  printed: number;
+  rejected: number;
+  pages: number;
+  collectedPaise: number;
+  unpaidCount: number;
+  unpaidPaise: number;
+  lastOrderAt: Date | null;
+}
+
+export interface DailyStats {
+  date: string;
+  orders: number;
+  printed: number;
+  rejected: number;
+  pages: number;
+  collectedPaise: number;
+}
+
+export interface MethodTotals {
+  method: PaymentMethod;
+  count: number;
+  amountPaise: number;
+}
+
+export interface Period {
+  /** First queue date, inclusive (YYYY-MM-DD). */
+  from: string;
+  /** Last queue date, inclusive; open-ended when missing. */
+  to?: string | undefined;
+  /** Only this shop; every shop when missing. */
+  shopId?: string | undefined;
 }
 
 export interface PrintFileUsage {
@@ -205,6 +244,164 @@ export function createOrderRepo(db: Db) {
         data,
       });
       return count === 1 ? this.findForShop(shopId, id) : null;
+    },
+
+    /** Records (or corrects) how the student paid. Only orders the shop actually dealt with can be paid. */
+    async recordPayment(
+      shopId: string,
+      id: string,
+      data: { method: PaymentMethod; amountPaise: number; at: Date },
+    ): Promise<OrderRecord | null> {
+      const { count } = await db.order.updateMany({
+        where: { id, shopId, status: { in: ['pending', 'accepted', 'printing', 'completed'] } },
+        data: { paymentMethod: data.method, paidAmountPaise: data.amountPaise, paidAt: data.at },
+      });
+      return count === 1 ? this.findForShop(shopId, id) : null;
+    },
+
+    /** One row of numbers per shop for the period. Shops with no orders are absent. */
+    async statsByShop(period: Period): Promise<Map<string, PeriodStats>> {
+      const { from, to = '9999-12-31' } = period;
+      const shop = period.shopId ?? null;
+      const rows = await db.$queryRaw<
+        {
+          shop_id: string;
+          orders: bigint;
+          printed: bigint;
+          rejected: bigint;
+          collected: bigint;
+          unpaid_count: bigint;
+          unpaid_paise: bigint;
+          last_order_at: Date | null;
+        }[]
+      >`
+        SELECT o.shop_id,
+               count(*) AS orders,
+               count(*) FILTER (WHERE o.status = 'completed') AS printed,
+               count(*) FILTER (WHERE o.status = 'rejected') AS rejected,
+               coalesce(sum(o.paid_amount_paise), 0) AS collected,
+               count(*) FILTER (WHERE o.status = 'completed' AND o.payment_method IS NULL) AS unpaid_count,
+               coalesce(sum(coalesce(o.final_amount_paise, o.estimated_amount_paise))
+                 FILTER (WHERE o.status = 'completed' AND o.payment_method IS NULL), 0) AS unpaid_paise,
+               max(o.created_at) AS last_order_at
+        FROM orders o
+        WHERE o.queue_date >= ${from} AND o.queue_date <= ${to}
+          AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
+        GROUP BY o.shop_id`;
+      const pages = await db.$queryRaw<{ shop_id: string; pages: bigint }[]>`
+        SELECT oi.shop_id, coalesce(sum(oi.printed_sides), 0) AS pages
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE o.status = 'completed' AND o.queue_date >= ${from} AND o.queue_date <= ${to}
+          AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
+        GROUP BY oi.shop_id`;
+      const pageMap = new Map(pages.map((p) => [p.shop_id, Number(p.pages)]));
+      return new Map(
+        rows.map((r) => [
+          r.shop_id,
+          {
+            orders: Number(r.orders),
+            printed: Number(r.printed),
+            rejected: Number(r.rejected),
+            pages: pageMap.get(r.shop_id) ?? 0,
+            collectedPaise: Number(r.collected),
+            unpaidCount: Number(r.unpaid_count),
+            unpaidPaise: Number(r.unpaid_paise),
+            lastOrderAt: r.last_order_at,
+          },
+        ]),
+      );
+    },
+
+    /** One row per day with orders (days without orders are absent), oldest first. */
+    async dailyStats(period: Period): Promise<DailyStats[]> {
+      const { from, to = '9999-12-31' } = period;
+      const shop = period.shopId ?? null;
+      const rows = await db.$queryRaw<
+        {
+          date: string;
+          orders: bigint;
+          printed: bigint;
+          rejected: bigint;
+          collected: bigint;
+          pages: bigint;
+        }[]
+      >`
+        SELECT o.queue_date AS date,
+               count(*) AS orders,
+               count(*) FILTER (WHERE o.status = 'completed') AS printed,
+               count(*) FILTER (WHERE o.status = 'rejected') AS rejected,
+               coalesce(sum(o.paid_amount_paise), 0) AS collected,
+               coalesce(sum((SELECT sum(oi.printed_sides) FROM order_items oi WHERE oi.order_id = o.id))
+                 FILTER (WHERE o.status = 'completed'), 0) AS pages
+        FROM orders o
+        WHERE o.queue_date >= ${from} AND o.queue_date <= ${to}
+          AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
+        GROUP BY o.queue_date
+        ORDER BY o.queue_date`;
+      return rows.map((r) => ({
+        date: r.date,
+        orders: Number(r.orders),
+        printed: Number(r.printed),
+        rejected: Number(r.rejected),
+        pages: Number(r.pages),
+        collectedPaise: Number(r.collected),
+      }));
+    },
+
+    /** What was collected, split by how it was paid. */
+    async methodTotals(period: Period): Promise<MethodTotals[]> {
+      const { from, to = '9999-12-31' } = period;
+      const shop = period.shopId ?? null;
+      const rows = await db.$queryRaw<{ method: PaymentMethod; count: bigint; amount: bigint }[]>`
+        SELECT o.payment_method AS method, count(*) AS count,
+               coalesce(sum(o.paid_amount_paise), 0) AS amount
+        FROM orders o
+        WHERE o.payment_method IS NOT NULL
+          AND o.queue_date >= ${from} AND o.queue_date <= ${to}
+          AND (${shop}::uuid IS NULL OR o.shop_id = ${shop}::uuid)
+        GROUP BY o.payment_method
+        ORDER BY o.payment_method`;
+      return rows.map((r) => ({
+        method: r.method,
+        count: Number(r.count),
+        amountPaise: Number(r.amount),
+      }));
+    },
+
+    /** The latest orders of a shop without personal data, for the platform admin. */
+    async recentForShop(
+      shopId: string,
+      limit: number,
+    ): Promise<
+      {
+        queueNumber: number;
+        status: OrderStatus;
+        amountPaise: number;
+        paymentMethod: PaymentMethod | null;
+        createdAt: Date;
+      }[]
+    > {
+      const rows = await db.order.findMany({
+        where: { shopId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          queueNumber: true,
+          status: true,
+          estimatedAmountPaise: true,
+          finalAmountPaise: true,
+          paidAmountPaise: true,
+          paymentMethod: true,
+          createdAt: true,
+        },
+      });
+      return rows.map((r) => ({
+        queueNumber: r.queueNumber,
+        status: r.status,
+        amountPaise: r.paidAmountPaise ?? r.finalAmountPaise ?? r.estimatedAmountPaise,
+        paymentMethod: r.paymentMethod,
+        createdAt: r.createdAt,
+      }));
     },
 
     /** Open orders past their retention time become expired. */

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { Email } from './identity.js';
+import { OrderStatus } from './order.js';
+import { PaymentMethod, PaymentTotals } from './owner-orders.js';
 import { ShopSlug, ShopStatus } from './shops.js';
 
 /** What a new shop owner fills in on the public sign-up page. */
@@ -26,6 +28,19 @@ export type ApplyResponse = z.infer<typeof ApplyResponse>;
 export const ShopFlags = z.object({ officeFiles: z.boolean() });
 export type ShopFlags = z.infer<typeof ShopFlags>;
 
+/** What a shop did over a period, for the platform admin. */
+export const ShopStats = z.object({
+  orders: z.number().int(),
+  printed: z.number().int(),
+  rejected: z.number().int(),
+  pages: z.number().int(),
+  collectedPaise: z.number().int(),
+  unpaidCount: z.number().int(),
+  unpaidPaise: z.number().int(),
+  lastOrderAt: z.string().nullable(),
+});
+export type ShopStats = z.infer<typeof ShopStats>;
+
 export const AdminShop = z.object({
   id: z.uuid(),
   slug: z.string(),
@@ -42,6 +57,14 @@ export const AdminShop = z.object({
   totalOrders: z.number(),
   ratesSet: z.boolean(),
   printingPaired: z.boolean(),
+  /** Is the shop's printing app connected right now? */
+  printingOnline: z.boolean(),
+  /** When the printing app was last active (connected or finished a job); null if never. */
+  printingLastSeenAt: z.string().nullable(),
+  /** The last 30 days, including today. */
+  stats30: ShopStats,
+  /** The platform admin's private notes about this shop. */
+  adminNotes: z.string(),
   flags: ShopFlags,
 });
 export type AdminShop = z.infer<typeof AdminShop>;
@@ -87,3 +110,68 @@ export const AdminAuditEntry = z.object({
 export type AdminAuditEntry = z.infer<typeof AdminAuditEntry>;
 export const AdminAuditList = z.object({ entries: z.array(AdminAuditEntry) });
 export type AdminAuditList = z.infer<typeof AdminAuditList>;
+
+export const ShopNotesBody = z.object({ notes: z.string().trim().max(2000) });
+export type ShopNotesBody = z.infer<typeof ShopNotesBody>;
+
+export const AdminDaily = z.object({
+  date: z.string(),
+  orders: z.number().int(),
+  printed: z.number().int(),
+  rejected: z.number().int(),
+  pages: z.number().int(),
+  collectedPaise: z.number().int(),
+});
+export type AdminDaily = z.infer<typeof AdminDaily>;
+
+export const AdminRecentOrder = z.object({
+  queueNumber: z.string(),
+  status: OrderStatus,
+  amountPaise: z.number().int(),
+  paymentMethod: PaymentMethod.nullable(),
+  createdAt: z.string(),
+});
+export type AdminRecentOrder = z.infer<typeof AdminRecentOrder>;
+
+/** One shop in depth: its numbers day by day, how it was paid, and its latest orders (no student names). */
+export const AdminShopDetail = z.object({
+  shop: AdminShop,
+  daily: z.array(AdminDaily),
+  byMethod: z.array(PaymentTotals),
+  recent: z.array(AdminRecentOrder),
+});
+export type AdminShopDetail = z.infer<typeof AdminShopDetail>;
+
+export const AdminAttention = z.object({
+  shopId: z.uuid(),
+  shopName: z.string(),
+  kind: z.enum(['waiting_approval', 'printing_offline', 'unpaid', 'storage_near_cap', 'no_orders']),
+  detail: z.string(),
+});
+export type AdminAttention = z.infer<typeof AdminAttention>;
+
+export const AdminOverview = z.object({
+  shops: z.object({
+    pending: z.number().int(),
+    active: z.number().int(),
+    suspended: z.number().int(),
+  }),
+  today: z.object({
+    orders: z.number().int(),
+    pages: z.number().int(),
+    collectedPaise: z.number().int(),
+  }),
+  last30: z.object({
+    orders: z.number().int(),
+    pages: z.number().int(),
+    collectedPaise: z.number().int(),
+  }),
+  byMethod30: z.array(PaymentTotals),
+  /** Active shops with a printing app: how many checked in recently. */
+  printingOnline: z.number().int(),
+  printingOffline: z.number().int(),
+  /** The 30-day platform total, one entry per day. */
+  daily: z.array(AdminDaily),
+  attention: z.array(AdminAttention),
+});
+export type AdminOverview = z.infer<typeof AdminOverview>;

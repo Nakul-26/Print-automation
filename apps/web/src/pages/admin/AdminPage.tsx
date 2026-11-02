@@ -5,11 +5,14 @@ import { SignInForm } from '../../components/SignInForm';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { adminApi } from '../../lib/admin-api';
 import { ApiError } from '../../lib/api';
-import { formatBytes } from '../../lib/format';
 import { isUnauthenticated, ownerApi } from '../../lib/owner-api';
+import { Overview } from './Overview';
+import { ShopCard } from './ShopCard';
+import { ShopDetailView } from './ShopDetail';
 
-type Tab = 'pending_approval' | 'active' | 'suspended' | 'settings' | 'activity';
+type Tab = 'overview' | 'pending_approval' | 'active' | 'suspended' | 'settings' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
   { key: 'pending_approval', label: 'Waiting' },
   { key: 'active', label: 'Active' },
   { key: 'suspended', label: 'Suspended' },
@@ -76,7 +79,8 @@ export function AdminPage() {
 }
 
 function Panel({ onSignOut }: { onSignOut: () => void }) {
-  const [tab, setTab] = useState<Tab>('pending_approval');
+  const [tab, setTab] = useState<Tab>('overview');
+  const [openShopId, setOpenShopId] = useState<string | null>(null);
   const [shops, setShops] = useState<AdminShop[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,249 +109,58 @@ function Panel({ onSignOut }: { onSignOut: () => void }) {
           Sign out
         </Button>
       </header>
-      <nav className="mt-4 flex flex-wrap gap-2" aria-label="Sections">
-        {TABS.map((t) => (
-          <Button
-            key={t.key}
-            variant={tab === t.key ? 'primary' : 'secondary'}
-            className="min-h-10 px-4 text-sm"
-            onClick={() => setTab(t.key)}
-            aria-pressed={tab === t.key}
-          >
-            {t.label}
-            {t.key === 'pending_approval' || t.key === 'active' || t.key === 'suspended'
-              ? ` · ${count(t.key)}`
-              : ''}
-          </Button>
-        ))}
-      </nav>
+      {openShopId ? (
+        <ShopDetailView shopId={openShopId} onBack={() => setOpenShopId(null)} onChange={replace} />
+      ) : (
+        <>
+          <nav className="mt-4 flex flex-wrap gap-2" aria-label="Sections">
+            {TABS.map((t) => (
+              <Button
+                key={t.key}
+                variant={tab === t.key ? 'primary' : 'secondary'}
+                className="min-h-10 px-4 text-sm"
+                onClick={() => setTab(t.key)}
+                aria-pressed={tab === t.key}
+              >
+                {t.label}
+                {t.key === 'pending_approval' || t.key === 'active' || t.key === 'suspended'
+                  ? ` · ${count(t.key)}`
+                  : ''}
+              </Button>
+            ))}
+          </nav>
 
-      {error && (
-        <div className="mt-4">
-          <Notice tone="error">{error}</Notice>
-        </div>
-      )}
-
-      {tab === 'settings' && <Settings />}
-      {tab === 'activity' && <Activity shops={shops ?? []} />}
-      {tab !== 'settings' && tab !== 'activity' && (
-        <section className="mt-5 space-y-4">
-          {!shops && !error && <Spinner label="Loading shops" />}
-          {shops && visible.length === 0 && (
-            <p className="rounded-card border border-dashed border-line px-4 py-8 text-center text-muted">
-              {tab === 'pending_approval' ? 'No applications waiting.' : 'No shops here.'}
-            </p>
+          {error && (
+            <div className="mt-4">
+              <Notice tone="error">{error}</Notice>
+            </div>
           )}
-          {visible.map((shop) => (
-            <ShopCard key={shop.id} shop={shop} onChange={replace} />
-          ))}
-        </section>
+
+          {tab === 'overview' && shops && <Overview shops={shops} onOpenShop={setOpenShopId} />}
+          {tab === 'overview' && !shops && !error && <Spinner label="Loading" />}
+          {tab === 'settings' && <Settings />}
+          {tab === 'activity' && <Activity shops={shops ?? []} />}
+          {tab !== 'overview' && tab !== 'settings' && tab !== 'activity' && (
+            <section className="mt-5 space-y-4">
+              {!shops && !error && <Spinner label="Loading shops" />}
+              {shops && visible.length === 0 && (
+                <p className="rounded-card border border-dashed border-line px-4 py-8 text-center text-muted">
+                  {tab === 'pending_approval' ? 'No applications waiting.' : 'No shops here.'}
+                </p>
+              )}
+              {visible.map((shop) => (
+                <ShopCard
+                  key={shop.id}
+                  shop={shop}
+                  onChange={replace}
+                  onOpen={() => setOpenShopId(shop.id)}
+                />
+              ))}
+            </section>
+          )}
+        </>
       )}
     </main>
-  );
-}
-
-function Check({ ok, children }: { ok: boolean; children: string }) {
-  return (
-    <span className={ok ? 'text-ok' : 'text-muted'}>
-      {ok ? '✓' : '○'} {children}
-    </span>
-  );
-}
-
-function ShopCard({ shop, onChange }: { shop: AdminShop; onChange: (s: AdminShop) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [suspending, setSuspending] = useState(false);
-  const [reason, setReason] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [quotaMb, setQuotaMb] = useState(
-    shop.storageQuotaBytes === null ? '' : String(Math.round(shop.storageQuotaBytes / MB)),
-  );
-
-  const run = async (work: () => Promise<AdminShop>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      onChange(await work());
-      setSuspending(false);
-      setEditing(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveLimits = () => {
-    const mb = quotaMb.trim() === '' ? null : Number(quotaMb);
-    if (mb !== null && (!Number.isFinite(mb) || mb <= 0)) {
-      setError('Enter a number of MB, or leave it empty for no cap.');
-      return;
-    }
-    return run(() =>
-      adminApi.setLimits(shop.id, { storageQuotaBytes: mb === null ? null : Math.round(mb * MB) }),
-    );
-  };
-
-  return (
-    <article className="rounded-card border border-line bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="font-semibold">{shop.name}</h2>
-          <p className="font-mono text-xs text-muted">/s/{shop.slug}</p>
-        </div>
-        <p className="font-mono text-xs uppercase text-muted">
-          Applied {new Date(shop.createdAt).toLocaleDateString()}
-        </p>
-      </div>
-      <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="inline text-muted">Owner: </dt>
-          <dd className="inline">
-            {shop.owner ? `${shop.owner.name} (${shop.owner.email})` : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt className="inline text-muted">Phone: </dt>
-          <dd className="inline">{shop.contactPhone ?? '—'}</dd>
-        </div>
-        <div className="sm:col-span-2">
-          <dt className="inline text-muted">Address: </dt>
-          <dd className="inline">{shop.address ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="inline text-muted">Storage: </dt>
-          <dd className="inline">
-            {shop.storageBytes === 0 ? '0 KB' : formatBytes(shop.storageBytes)}
-            {shop.storageQuotaBytes !== null ? ` of ${formatBytes(shop.storageQuotaBytes)}` : ''}
-          </dd>
-        </div>
-        <div>
-          <dt className="inline text-muted">Orders: </dt>
-          <dd className="inline">
-            {shop.openOrders} open · {shop.totalOrders} total
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-3 flex flex-wrap gap-x-5 text-sm">
-        <Check ok={shop.ratesSet}>Prices set</Check>
-        <Check ok={shop.printingPaired}>Printing app linked</Check>
-        <Check ok={shop.flags.officeFiles}>Word/Excel/PowerPoint on</Check>
-      </p>
-
-      {error && (
-        <div className="mt-3">
-          <Notice tone="error">{error}</Notice>
-        </div>
-      )}
-
-      {suspending && (
-        <div className="mt-3 space-y-2">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason (kept in the activity log)"
-            maxLength={300}
-            className="min-h-11 w-full rounded-xl border border-line bg-white px-3 text-base"
-          />
-          <p className="text-sm text-muted">
-            The owner is signed out of the queue, the printing app is disconnected and students can
-            no longer use the shop.
-          </p>
-        </div>
-      )}
-
-      {editing && (
-        <div className="mt-3 space-y-3 rounded-xl bg-paper p-3">
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span>Storage cap for this shop (MB, empty = none)</span>
-            <input
-              inputMode="numeric"
-              value={quotaMb}
-              onChange={(e) => setQuotaMb(e.target.value)}
-              className="min-h-11 w-28 rounded-xl border border-line bg-white px-3 text-right"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={shop.flags.officeFiles}
-              disabled={busy}
-              onChange={(e) =>
-                void run(() =>
-                  adminApi.setLimits(shop.id, { flags: { officeFiles: e.target.checked } }),
-                )
-              }
-            />
-            Accept Word, Excel and PowerPoint files
-          </label>
-          <Button
-            className="min-h-10 px-4 text-sm"
-            onClick={() => void saveLimits()}
-            disabled={busy}
-          >
-            Save cap
-          </Button>
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {shop.status === 'pending_approval' && (
-          <Button
-            className="min-h-10 px-4 text-sm"
-            disabled={busy}
-            onClick={() => void run(() => adminApi.approve(shop.id))}
-          >
-            Approve
-          </Button>
-        )}
-        {shop.status === 'suspended' && (
-          <Button
-            className="min-h-10 px-4 text-sm"
-            disabled={busy}
-            onClick={() => void run(() => adminApi.reactivate(shop.id))}
-          >
-            Reactivate
-          </Button>
-        )}
-        {shop.status !== 'suspended' &&
-          (suspending ? (
-            <>
-              <Button
-                variant="danger"
-                className="min-h-10 px-4 text-sm"
-                disabled={busy}
-                onClick={() => void run(() => adminApi.suspend(shop.id, reason))}
-              >
-                Confirm suspend
-              </Button>
-              <Button
-                variant="ghost"
-                className="min-h-10 px-4 text-sm"
-                onClick={() => setSuspending(false)}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="danger"
-              className="min-h-10 px-4 text-sm"
-              onClick={() => setSuspending(true)}
-            >
-              {shop.status === 'pending_approval' ? 'Reject' : 'Suspend'}
-            </Button>
-          ))}
-        <Button
-          variant="secondary"
-          className="min-h-10 px-4 text-sm"
-          onClick={() => setEditing((v) => !v)}
-        >
-          Limits
-        </Button>
-      </div>
-    </article>
   );
 }
 

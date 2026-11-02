@@ -43,6 +43,7 @@ export function createShops(deps: {
     addMember: service.addMember,
     changeStatus: service.changeStatus,
     setLimits: service.setLimits,
+    setAdminNotes: service.setAdminNotes,
     listForAdmin: repo.listForAdmin,
   };
 }

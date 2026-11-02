@@ -1,9 +1,16 @@
+import { formatQueueNumber } from '@print/domain';
 import type {
+  AdminAttention,
   AdminAuditList,
+  AdminDaily,
+  AdminOverview,
+  AdminRecentOrder,
   AdminSettings,
   AdminShop,
+  AdminShopDetail,
   ApplyRequest,
   ApplyResponse,
+  PaymentTotals,
   ShopLimitsBody,
 } from '@print/contracts';
 import { HttpError } from '../../../platform/http/error-handler.js';
@@ -35,6 +42,11 @@ export interface AdminPorts {
       flags?: Partial<ShopRecord['flags']> | undefined;
       actorId: string;
     }) => Promise<ShopRecord>;
+    setAdminNotes: (input: {
+      shopId: string;
+      notes: string;
+      actorId: string;
+    }) => Promise<ShopRecord>;
   };
   identity: {
     findUserByEmail: (email: string) => Promise<{ id: string } | null>;
@@ -52,8 +64,52 @@ export interface AdminPorts {
     ordersByShop: () => Promise<Map<string, { open: number; total: number }>>;
     shopsWithRates: () => Promise<Set<string>>;
     shopsWithPrintingApp: () => Promise<Set<string>>;
+    /** Live connection state and last activity of each shop's printing app. */
+    printingPresence: () => Promise<Map<string, { online: boolean; lastSeenAt: Date | null }>>;
+  };
+  /** Orders, payments and pages over the last N days (today included). */
+  activity: {
+    statsByShop: (days: number) => Promise<Map<string, PeriodStats>>;
+    daily: (days: number, shopId?: string) => Promise<AdminDaily[]>;
+    methods: (days: number, shopId?: string) => Promise<PaymentTotals[]>;
+    recent: (
+      shopId: string,
+      limit: number,
+    ) => Promise<
+      {
+        queueNumber: number;
+        status: AdminRecentOrder['status'];
+        amountPaise: number;
+        paymentMethod: AdminRecentOrder['paymentMethod'];
+        createdAt: Date;
+      }[]
+    >;
   };
 }
+
+export interface PeriodStats {
+  orders: number;
+  printed: number;
+  rejected: number;
+  pages: number;
+  collectedPaise: number;
+  unpaidCount: number;
+  unpaidPaise: number;
+  lastOrderAt: Date | null;
+}
+
+const NO_STATS: PeriodStats = {
+  orders: 0,
+  printed: 0,
+  rejected: 0,
+  pages: 0,
+  collectedPaise: 0,
+  unpaidCount: 0,
+  unpaidPaise: 0,
+  lastOrderAt: null,
+};
+
+const DAY_MS = 86_400_000;
 
 export function createAdminService(deps: {
   ports: AdminPorts;
@@ -64,31 +120,93 @@ export function createAdminService(deps: {
   const { ports, settings, audit } = deps;
 
   async function viewShops(status?: AdminShopRecord['status']): Promise<AdminShop[]> {
-    const [shops, storage, orders, rates, printing] = await Promise.all([
+    const [shops, storage, orders, rates, printing, presence, stats30] = await Promise.all([
       ports.shops.listForAdmin(status),
       ports.usage.storageByShop(),
       ports.usage.ordersByShop(),
       ports.usage.shopsWithRates(),
       ports.usage.shopsWithPrintingApp(),
+      ports.usage.printingPresence(),
+      ports.activity.statsByShop(30),
     ]);
-    return shops.map((s) => ({
-      id: s.id,
-      slug: s.slug,
-      name: s.name,
-      status: s.status,
-      address: s.address,
-      contactPhone: s.contactPhone,
-      createdAt: s.createdAt.toISOString(),
-      owner: s.owner,
-      storageBytes: storage.get(s.id) ?? 0,
-      storageQuotaBytes: s.storageQuotaBytes,
-      openOrders: orders.get(s.id)?.open ?? 0,
-      totalOrders: orders.get(s.id)?.total ?? 0,
-      ratesSet: rates.has(s.id),
-      printingPaired: printing.has(s.id),
-      flags: s.flags,
-    }));
+    return shops.map((s) => {
+      const stats = stats30.get(s.id) ?? NO_STATS;
+      return {
+        id: s.id,
+        slug: s.slug,
+        name: s.name,
+        status: s.status,
+        address: s.address,
+        contactPhone: s.contactPhone,
+        createdAt: s.createdAt.toISOString(),
+        owner: s.owner,
+        storageBytes: storage.get(s.id) ?? 0,
+        storageQuotaBytes: s.storageQuotaBytes,
+        openOrders: orders.get(s.id)?.open ?? 0,
+        totalOrders: orders.get(s.id)?.total ?? 0,
+        ratesSet: rates.has(s.id),
+        printingPaired: printing.has(s.id),
+        printingOnline: presence.get(s.id)?.online ?? false,
+        printingLastSeenAt: presence.get(s.id)?.lastSeenAt?.toISOString() ?? null,
+        stats30: {
+          orders: stats.orders,
+          printed: stats.printed,
+          rejected: stats.rejected,
+          pages: stats.pages,
+          collectedPaise: stats.collectedPaise,
+          unpaidCount: stats.unpaidCount,
+          unpaidPaise: stats.unpaidPaise,
+          lastOrderAt: stats.lastOrderAt?.toISOString() ?? null,
+        },
+        adminNotes: s.adminNotes,
+        flags: s.flags,
+      };
+    });
   }
+
+  const money = (paise: number): string => `₹${(paise / 100).toFixed(2).replace(/\.00$/, '')}`;
+
+  /** Things the platform admin should look at today, most urgent first. */
+  function attentionFor(shops: AdminShop[], now: Date): AdminAttention[] {
+    const items: AdminAttention[] = [];
+    for (const s of shops) {
+      const add = (kind: AdminAttention['kind'], detail: string) =>
+        items.push({ shopId: s.id, shopName: s.name, kind, detail });
+      if (s.status === 'pending_approval') {
+        const days = Math.floor((now.getTime() - Date.parse(s.createdAt)) / DAY_MS);
+        add('waiting_approval', days < 1 ? 'Applied today' : `Waiting for ${days} day(s)`);
+      }
+      if (s.status !== 'active') continue;
+      if (s.printingPaired && !s.printingOnline && s.openOrders > 0) {
+        add('printing_offline', `${s.openOrders} order(s) waiting but the printing app is offline`);
+      }
+      if (s.stats30.unpaidCount >= 5) {
+        add(
+          'unpaid',
+          `${s.stats30.unpaidCount} printed orders (${money(s.stats30.unpaidPaise)}) have no payment recorded`,
+        );
+      }
+      if (s.storageQuotaBytes && s.storageBytes > s.storageQuotaBytes * 0.8) {
+        add(
+          'storage_near_cap',
+          `Using ${Math.round((s.storageBytes / s.storageQuotaBytes) * 100)}% of its storage cap`,
+        );
+      }
+      const ageDays = (now.getTime() - Date.parse(s.createdAt)) / DAY_MS;
+      if (s.stats30.orders === 0 && ageDays > 7) add('no_orders', 'No orders in the last 30 days');
+    }
+    return items;
+  }
+
+  const sum = (rows: AdminDaily[]) =>
+    rows.reduce(
+      (t, r) => ({
+        orders: t.orders + r.orders,
+        pages: t.pages + r.pages,
+        collectedPaise: t.collectedPaise + r.collectedPaise,
+      }),
+      { orders: 0, pages: 0, collectedPaise: 0 },
+    );
 
   async function viewOne(shopId: string): Promise<AdminShop> {
     const found = (await viewShops()).find((s) => s.id === shopId);
@@ -161,6 +279,62 @@ export function createAdminService(deps: {
         flags: body.flags,
         actorId,
       });
+      return viewOne(shopId);
+    },
+
+    /** The platform at a glance: shops by state, today and 30-day totals, and what needs attention. */
+    async overview(): Promise<AdminOverview> {
+      const [shops, daily, byMethod30] = await Promise.all([
+        viewShops(),
+        ports.activity.daily(30),
+        ports.activity.methods(30),
+      ]);
+      const active = shops.filter((s) => s.status === 'active');
+      const withApp = active.filter((s) => s.printingPaired);
+      const online = withApp.filter((s) => s.printingOnline).length;
+      const today = daily[daily.length - 1];
+      return {
+        shops: {
+          pending: shops.filter((s) => s.status === 'pending_approval').length,
+          active: active.length,
+          suspended: shops.filter((s) => s.status === 'suspended').length,
+        },
+        today: today
+          ? { orders: today.orders, pages: today.pages, collectedPaise: today.collectedPaise }
+          : { orders: 0, pages: 0, collectedPaise: 0 },
+        last30: sum(daily),
+        byMethod30,
+        printingOnline: online,
+        printingOffline: withApp.length - online,
+        daily,
+        attention: attentionFor(shops, new Date()),
+      };
+    },
+
+    /** One shop in depth. Recent orders carry no student names. */
+    async shopDetail(shopId: string): Promise<AdminShopDetail> {
+      const shop = await viewOne(shopId);
+      const [daily, byMethod, recent] = await Promise.all([
+        ports.activity.daily(30, shopId),
+        ports.activity.methods(30, shopId),
+        ports.activity.recent(shopId, 20),
+      ]);
+      return {
+        shop,
+        daily,
+        byMethod,
+        recent: recent.map((r) => ({
+          queueNumber: formatQueueNumber(r.queueNumber),
+          status: r.status,
+          amountPaise: r.amountPaise,
+          paymentMethod: r.paymentMethod,
+          createdAt: r.createdAt.toISOString(),
+        })),
+      };
+    },
+
+    async setNotes(shopId: string, notes: string, actorId: string): Promise<AdminShop> {
+      await ports.shops.setAdminNotes({ shopId, notes, actorId });
       return viewOne(shopId);
     },
 

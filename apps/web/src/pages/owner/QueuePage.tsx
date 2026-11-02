@@ -4,10 +4,12 @@ import {
   REALTIME,
   type OrderActionBody,
   type OwnerOrder,
+  type OwnerSummary,
   type PrintingStatus,
   type ShopDetail,
 } from '@print/contracts';
 import { FileDialog } from '../../components/owner/FileDialog';
+import { TodaySummary } from '../../components/owner/TodaySummary';
 import { OrderCard } from '../../components/owner/OrderCard';
 import { PrintingPanel } from '../../components/owner/PrintingPanel';
 import { RatesPanel } from '../../components/owner/RatesPanel';
@@ -30,6 +32,7 @@ export function QueuePage() {
 
   const [shop, setShop] = useState<ShopDetail | null>(null);
   const [orders, setOrders] = useState<OwnerOrder[] | null>(null);
+  const [summary, setSummary] = useState<OwnerSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
@@ -51,6 +54,10 @@ export function QueuePage() {
 
   const refresh = useCallback(async () => {
     try {
+      void ownerApi
+        .summary(shopId)
+        .then(setSummary)
+        .catch(() => undefined);
       const next = await ownerApi.queue(shopId);
       // Chime for orders that were not here before, but not for the first load of the page.
       const waiting = new Set(next.filter((o) => o.status === 'pending').map((o) => o.id));
@@ -110,6 +117,12 @@ export function QueuePage() {
     try {
       const updated = await ownerApi.act(shopId, order.id, body);
       setOrders((list) => list?.map((o) => (o.id === updated.id ? updated : o)) ?? list);
+      if (body.action === 'record_payment') {
+        void ownerApi
+          .summary(shopId)
+          .then(setSummary)
+          .catch(() => undefined);
+      }
     } catch (err) {
       leave(err);
       setCardErrors((e) => ({
@@ -141,9 +154,15 @@ export function QueuePage() {
   const waiting = orders?.filter((o) => WAITING.includes(o.status)).sort(byNumber) ?? [];
   const inProgress = orders?.filter((o) => IN_PROGRESS.includes(o.status)).sort(byNumber) ?? [];
   const preparing = orders?.filter((o) => o.status === 'processing') ?? [];
+  // Printed orders whose payment has not been recorded stay in view until the shop taps how they paid.
+  const unpaid = orders?.filter((o) => o.status === 'completed' && !o.payment).reverse() ?? [];
   const finished =
     orders
-      ?.filter((o) => ['completed', 'rejected', 'failed', 'expired'].includes(o.status))
+      ?.filter(
+        (o) =>
+          ['rejected', 'failed', 'expired'].includes(o.status) ||
+          (o.status === 'completed' && o.payment),
+      )
       .reverse() ?? [];
 
   const card = (order: OwnerOrder) => (
@@ -244,6 +263,8 @@ export function QueuePage() {
         {loadError && <Notice tone="error">{loadError}</Notice>}
         {!orders && !loadError && <Spinner label="Loading the queue" />}
 
+        {summary && <TodaySummary summary={summary} />}
+
         {orders && (
           <div className="space-y-8">
             <section aria-labelledby="waiting-h">
@@ -271,6 +292,18 @@ export function QueuePage() {
                   Printing · {inProgress.length}
                 </h2>
                 <div className="space-y-4">{inProgress.map(card)}</div>
+              </section>
+            )}
+
+            {unpaid.length > 0 && (
+              <section aria-labelledby="unpaid-h">
+                <h2
+                  id="unpaid-h"
+                  className="mb-3 font-mono text-xs uppercase tracking-wide text-muted"
+                >
+                  Printed, payment not recorded · {unpaid.length}
+                </h2>
+                <div className="space-y-4">{unpaid.map(card)}</div>
               </section>
             )}
 

@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
-import { OrderActionBody, type OwnerQueueResponse } from '@print/contracts';
+import { OrderActionBody, type OwnerQueueResponse, type OwnerSummary } from '@print/contracts';
 import { HttpError } from '../../../platform/http/error-handler.js';
 import type { OrderService } from '../service/order-service.js';
 
@@ -23,6 +23,12 @@ export function createOwnerOrdersRouter(deps: {
 
   router.get('/:shopId/orders', deps.requireShopAccess, async (req, res) => {
     const body: OwnerQueueResponse = { orders: await deps.orders.listQueue(req.tenant!.shopId) };
+    res.set('Cache-Control', 'no-store');
+    res.json(body);
+  });
+
+  router.get('/:shopId/summary', deps.requireShopAccess, async (req, res) => {
+    const body: OwnerSummary = await deps.orders.summary(req.tenant!.shopId);
     res.set('Cache-Control', 'no-store');
     res.json(body);
   });

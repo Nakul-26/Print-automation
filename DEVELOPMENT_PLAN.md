@@ -350,6 +350,10 @@ Production Dockerfiles and compose, Dokploy setup (domains, HTTPS, volumes, heal
 Exit: the shop runs daily operations on it; feedback list captured.
 Done (in the repo, verified on the production images locally): least-privilege DB role, encrypted R2 backup sidecar with restore verification, restore drill and full disaster rebuild, crash/restart recovery, real-client-IP and nginx re-resolve fixes, staging definition, load-test tool, deployment guide, runbook and pilot checklist (ADR 0012, docs/deployment.md, runbook.md, load-testing.md, pilot.md). Pending on the real server: create the R2 bucket and keys, deploy, restore drill with the real key, load test on the server, real-printer checks, the two-week pilot.
 
+**Phase 9.5: Counter payments record and shop tracking (added during deployment)**
+The shop records how each student paid at the counter (cash, UPI or card) with one tap; a daily summary for the shop; the platform admin gets an overview (today and 30 days, trend charts, payment split, what needs attention), a per-shop table and a shop detail page with private notes (ADR 0013).
+Done and covered by 8 new integration tests. Not done: online payments (still Phase 11), exports, per-shop timezones in the admin windows.
+
 **Phase 10: Pilot fixes (1-2 weeks)**
 Fix usability issues, tune limits and conversion defaults, measure time saved.
 

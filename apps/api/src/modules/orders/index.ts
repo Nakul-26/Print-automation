@@ -113,6 +113,7 @@ export function createOrders(deps: {
       retire: orders.retire,
       printFileUsage: orders.printFileUsage,
       countsByShop: orders.countsByShop,
+      activity: orders.activity,
       evictFiles: orders.evictFiles,
       markPrinted: orders.markPrinted,
       touch: orders.touch,

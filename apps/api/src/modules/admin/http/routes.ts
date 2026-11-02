@@ -5,6 +5,7 @@ import {
   AdminSettingsBody,
   ApplyRequest,
   ShopLimitsBody,
+  ShopNotesBody,
   ShopStatus,
   SuspendBody,
   type ApplyConfig,
@@ -58,6 +59,23 @@ export function createAdminRouter(deps: {
 }): Router {
   const router = Router();
   router.use(deps.requireAuth, deps.requirePlatformAdmin);
+
+  router.get('/overview', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await deps.admin.overview());
+  });
+
+  router.get('/shops/:shopId', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await deps.admin.shopDetail(shopIdOf(req.params['shopId'])));
+  });
+
+  router.put('/shops/:shopId/notes', async (req, res) => {
+    const body = ShopNotesBody.parse(req.body);
+    res.json(
+      await deps.admin.setNotes(shopIdOf(req.params['shopId']), body.notes, req.auth!.userId),
+    );
+  });
 
   router.get('/shops', async (req, res) => {
     const status =

@@ -71,6 +71,21 @@ export function createPrinting(deps: {
       cancelOrder: service.cancelOrder,
       statesFor: service.statesFor,
       shopsWithPrintingApp: () => repo.shopsWithDevice(),
+      presenceByShop: async (): Promise<
+        Map<string, { online: boolean; lastSeenAt: Date | null }>
+      > => {
+        const result = new Map<string, { online: boolean; lastSeenAt: Date | null }>();
+        for (const device of await repo.linkedDevices()) {
+          const online = await deps.realtime.agents.isOnline(device.id);
+          const previous = result.get(device.shopId);
+          const lastSeenAt =
+            previous?.lastSeenAt && device.lastSeenAt && previous.lastSeenAt > device.lastSeenAt
+              ? previous.lastSeenAt
+              : (device.lastSeenAt ?? previous?.lastSeenAt ?? null);
+          result.set(device.shopId, { online: online || previous?.online === true, lastSeenAt });
+        }
+        return result;
+      },
     },
     authenticateAgent: service.authenticate,
     sweep: service.sweep,

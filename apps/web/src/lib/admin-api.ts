@@ -1,7 +1,9 @@
 import {
   AdminAuditList,
+  AdminOverview,
   AdminSettings,
   AdminShop,
+  AdminShopDetail,
   AdminShopList,
   ApplyConfig,
   ApplyResponse,
@@ -25,6 +27,10 @@ export const applyApi = {
 /** Platform-admin calls. The server refuses anyone who is not a platform admin. */
 export const adminApi = {
   shops: async () => (await request(AdminShopList, '/admin/shops')).shops,
+  overview: () => request(AdminOverview, '/admin/overview'),
+  detail: (id: string) => request(AdminShopDetail, `/admin/shops/${id}`),
+  setNotes: (id: string, notes: string) =>
+    request(AdminShop, `/admin/shops/${id}/notes`, json('PUT', { notes })),
   approve: (id: string) => request(AdminShop, `/admin/shops/${id}/approve`, json('POST')),
   suspend: (id: string, reason: string) =>
     request(AdminShop, `/admin/shops/${id}/suspend`, json('POST', { reason })),

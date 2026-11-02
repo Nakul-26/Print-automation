@@ -9,6 +9,7 @@ import {
   type OrderPrintState,
   type OrderView,
   type OwnerOrder,
+  type OwnerSummary,
   type PublicShopInfo,
 } from '@print/contracts';
 import {
@@ -102,9 +103,16 @@ export function queueDateFor(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+/** Shops all run on Indian time today; platform-wide windows are cut on this timezone. */
+const PLATFORM_TIMEZONE = 'Asia/Kolkata';
+
 export function createOrderService(deps: OrderServiceDeps) {
   const { repo, storage, queue, conversion, audit, logger } = deps;
   const now = deps.now ?? (() => new Date());
+
+  /** The queue date `days - 1` days before today: the first day of a "last N days" window. */
+  const daysAgo = (days: number): string =>
+    queueDateFor(new Date(now().getTime() - (days - 1) * 86_400_000), PLATFORM_TIMEZONE);
 
   const hashToken = (token: string): string =>
     createHmac('sha256', deps.tokenSecret).update(token).digest('hex');
@@ -211,6 +219,14 @@ export function createOrderService(deps: OrderServiceDeps) {
       estimatedAmountPaise: order.estimatedAmountPaise,
       finalAmountPaise: order.finalAmountPaise,
       currency: order.currency,
+      payment:
+        order.paymentMethod && order.paidAt
+          ? {
+              method: order.paymentMethod,
+              amountPaise: order.paidAmountPaise ?? 0,
+              paidAt: order.paidAt.toISOString(),
+            }
+          : null,
       print,
       rejectionReason: order.rejectionReason,
       failureReason: order.failureReason,
@@ -459,6 +475,37 @@ export function createOrderService(deps: OrderServiceDeps) {
     printFileUsage: () => repo.printFileUsage(),
     countsByShop: () => repo.countsByShop(),
 
+    /**
+     * Numbers for the platform admin over the last `days` days (today included), counted by the
+     * queue date. The platform runs on one timezone for now, so the cut-off uses it.
+     */
+    activity: {
+      statsByShop: (days: number) => repo.statsByShop({ from: daysAgo(days) }),
+      daily: async (days: number, shopId?: string) => {
+        const rows = await repo.dailyStats({ from: daysAgo(days), shopId });
+        const byDate = new Map(rows.map((r) => [r.date, r]));
+        return Array.from({ length: days }, (_, i) => {
+          const date = queueDateFor(
+            new Date(now().getTime() - (days - 1 - i) * 86_400_000),
+            PLATFORM_TIMEZONE,
+          );
+          return (
+            byDate.get(date) ?? {
+              date,
+              orders: 0,
+              printed: 0,
+              rejected: 0,
+              pages: 0,
+              collectedPaise: 0,
+            }
+          );
+        });
+      },
+      methods: (days: number, shopId?: string) =>
+        repo.methodTotals({ from: daysAgo(days), shopId }),
+      recent: (shopId: string, limit: number) => repo.recentForShop(shopId, limit),
+    },
+
     /** Storage pressure: deletes the print files of these orders; open ones expire. */
     async evictFiles(orderIds: string[], reason: string) {
       const orders = await repo.findManyWithItems(orderIds);
@@ -501,6 +548,7 @@ export function createOrderService(deps: OrderServiceDeps) {
       if (body.action === 'retry_print' || body.action === 'print_manually') {
         return this.adjustPrinting(tenant, order, body.action);
       }
+      if (body.action === 'record_payment') return this.recordPayment(tenant, order, body);
 
       const target = { print: 'printing', reject: 'rejected', complete: 'completed' }[
         body.action
@@ -555,6 +603,62 @@ export function createOrderService(deps: OrderServiceDeps) {
       }
       announce(updated);
       return toOwnerView(updated, await this.printStateOf(tenant.shopId, updated.id));
+    },
+
+    /** The student paid at the counter. Saying it again corrects the method or amount. */
+    async recordPayment(
+      tenant: { shopId: string; userId: string },
+      order: OrderRecord,
+      body: Extract<OrderActionBody, { action: 'record_payment' }>,
+    ): Promise<OwnerOrder> {
+      const amountPaise = body.amountPaise ?? order.finalAmountPaise ?? order.estimatedAmountPaise;
+      const updated = await repo.recordPayment(tenant.shopId, order.id, {
+        method: body.method,
+        amountPaise,
+        at: now(),
+      });
+      if (!updated) {
+        throw new HttpError(
+          409,
+          'This order was rejected or has expired, so no payment can be recorded.',
+          'invalid_transition',
+        );
+      }
+      await audit.record({
+        actorType: 'user',
+        actorId: tenant.userId,
+        shopId: tenant.shopId,
+        action: order.paymentMethod ? 'order.payment_corrected' : 'order.payment_recorded',
+        entity: 'order',
+        entityId: order.id,
+        metadata: { queueNumber: order.queueNumber, method: body.method, amountPaise },
+      });
+      announce(updated);
+      return toOwnerView(updated, await this.printStateOf(tenant.shopId, updated.id));
+    },
+
+    /** Today's numbers for the shop's own dashboard (the day is the shop's local date). */
+    async summary(shopId: string): Promise<OwnerSummary> {
+      const shop = await deps.findShopById(shopId);
+      if (!shop) throw new HttpError(404, 'Shop not found', 'not_found');
+      const date = queueDateFor(now(), shop.timezone);
+      const period = { from: date, to: date, shopId };
+      const [stats, methods] = await Promise.all([
+        repo.statsByShop(period),
+        repo.methodTotals(period),
+      ]);
+      const s = stats.get(shopId);
+      return {
+        date,
+        orders: s?.orders ?? 0,
+        printed: s?.printed ?? 0,
+        rejected: s?.rejected ?? 0,
+        pages: s?.pages ?? 0,
+        collectedPaise: s?.collectedPaise ?? 0,
+        byMethod: methods,
+        unpaidCount: s?.unpaidCount ?? 0,
+        unpaidPaise: s?.unpaidPaise ?? 0,
+      };
     },
 
     async printStateOf(shopId: string, orderId: string): Promise<OrderPrintState | null> {

@@ -170,6 +170,7 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
         listForAdmin: shops.listForAdmin,
         changeStatus: shops.changeStatus,
         setLimits: shops.setLimits,
+        setAdminNotes: shops.setAdminNotes,
       },
       identity: {
         findUserByEmail: identity.users.findByEmail,
@@ -188,7 +189,9 @@ export function createContainer(deps: { env: ApiEnv; logger: Logger; db: Db }) {
         ordersByShop: orders.api.countsByShop,
         shopsWithRates: pricing.shopsWithRates,
         shopsWithPrintingApp: printing.api.shopsWithPrintingApp,
+        printingPresence: printing.api.presenceByShop,
       },
+      activity: orders.api.activity,
     },
   });
 

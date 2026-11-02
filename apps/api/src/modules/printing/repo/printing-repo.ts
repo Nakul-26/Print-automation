@@ -137,6 +137,14 @@ export function createPrintingRepo(db: Db) {
       return new Set(rows.map((r) => r.shopId));
     },
 
+    /** Every linked (not revoked) printing app, for the platform admin's overview. */
+    async linkedDevices(): Promise<{ id: string; shopId: string; lastSeenAt: Date | null }[]> {
+      return db.agentDevice.findMany({
+        where: { revokedAt: null },
+        select: { id: true, shopId: true, lastSeenAt: true },
+      });
+    },
+
     async activeDevice(shopId: string): Promise<DeviceRecord | null> {
       const row = await db.agentDevice.findFirst({
         where: { shopId, revokedAt: null },

@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import type { OrderActionBody, OwnerOrder, OwnerOrderItem } from '@print/contracts';
-import { PAPER_LABEL, PRINTER_LABEL, SIDES_LABEL, formatRupees, timeAgo } from '../../lib/format';
+import type { OrderActionBody, OwnerOrder, OwnerOrderItem, PaymentMethod } from '@print/contracts';
+import {
+  PAPER_LABEL,
+  PAYMENT_LABEL,
+  PRINTER_LABEL,
+  SIDES_LABEL,
+  formatRupees,
+  timeAgo,
+} from '../../lib/format';
 import { ownerApi } from '../../lib/owner-api';
 import { Button } from '../ui';
 
@@ -82,6 +89,64 @@ function ItemRow({
   );
 }
 
+const METHODS: PaymentMethod[] = ['cash', 'upi', 'card'];
+
+/** One tap records how the student paid at the counter. Tapping another method later corrects it. */
+function PaymentRow({
+  order,
+  busy,
+  onAct,
+}: {
+  order: OwnerOrder;
+  busy: boolean;
+  onAct: (body: OrderActionBody) => void;
+}) {
+  const [changing, setChanging] = useState(false);
+  const due = order.finalAmountPaise ?? order.estimatedAmountPaise;
+
+  if (order.payment && !changing) {
+    return (
+      <p className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok">
+        <span>
+          Paid {formatRupees(order.payment.amountPaise)} by {PAYMENT_LABEL[order.payment.method]} ✓
+        </span>
+        <button
+          type="button"
+          className="font-medium underline"
+          disabled={busy}
+          onClick={() => setChanging(true)}
+        >
+          Change
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      <p className="mb-2 text-sm font-medium">
+        {order.payment ? 'Change how they paid' : `Paid at the counter? ${formatRupees(due)}`}
+      </p>
+      <div className="flex gap-2">
+        {METHODS.map((method) => (
+          <Button
+            key={method}
+            variant="secondary"
+            className="min-h-11 flex-1"
+            disabled={busy}
+            onClick={() => {
+              setChanging(false);
+              onAct({ action: 'record_payment', method });
+            }}
+          >
+            {PAYMENT_LABEL[method]}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function OrderCard({
   order,
   shopId,
@@ -128,8 +193,12 @@ export function OrderCard({
             {formatRupees(order.finalAmountPaise ?? order.estimatedAmountPaise)}
           </p>
           <p className="font-mono text-xs text-muted">
-            {order.finalAmountPaise === null ? 'estimate' : 'collected'} ·{' '}
-            {timeAgo(order.createdAt)}
+            {order.payment
+              ? 'collected'
+              : order.finalAmountPaise === null
+                ? 'estimate'
+                : 'to collect'}{' '}
+            · {timeAgo(order.createdAt)}
           </p>
         </div>
       </header>
@@ -269,6 +338,10 @@ export function OrderCard({
             </>
           )}
         </div>
+      )}
+
+      {(order.status === 'printing' || order.status === 'completed') && (
+        <PaymentRow order={order} busy={busy} onAct={onAct} />
       )}
 
       {order.status === 'completed' && order.print?.state === 'done' && (
