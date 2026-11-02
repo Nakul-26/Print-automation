@@ -10,7 +10,13 @@ The stack (`infra/compose.prod.yaml`) is five containers: `postgres`, `api`, `wo
 ## 0. Before you start (once)
 
 1. **Push the repository** to GitHub (it is `Nakul-26/Print-automation`). Dokploy builds from it.
-2. **Cloudflare R2 bucket for backups** (free tier is enough: ~10 GB):
+
+> **Backups are optional.** Without `COMPOSE_PROFILES=backup` in the environment the `backup`
+> container is not started, nothing is uploaded, and items 2, 3 and 5 below can be skipped. The risk:
+> if the server disk is lost, so is every shop, price list and order record. Switch them on before
+> real shops depend on the site.
+
+2. **(Optional) Cloudflare R2 bucket for backups** (free tier is enough: ~10 GB):
    Cloudflare dashboard → R2 → Create bucket `fiveorbit-print-backups` → _Manage R2 API tokens_ →
    create a token with **Object Read & Write limited to that bucket**. Write down the Access Key ID,
    Secret Access Key and the endpoint `https://<account id>.r2.cloudflarestorage.com`.

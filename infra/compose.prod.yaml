@@ -1,4 +1,5 @@
-# Production stack for Dokploy (or any Docker host): web (nginx) + api + worker + postgres + backup.
+# Production stack for Dokploy (or any Docker host): web (nginx) + api + worker + postgres,
+# plus an optional backup service that is switched on with COMPOSE_PROFILES=backup.
 #
 # Dokploy: create a "Compose" application from this repository, set the compose path to
 # infra/compose.prod.yaml, fill in the environment variables from infra/.env.production.example,
@@ -121,7 +122,11 @@ services:
 
   # Nightly encrypted database backups to Cloudflare R2 (or any S3-compatible bucket). Every backup
   # is restored into a scratch database and checked before it is uploaded. See docs/runbook.md.
+  #
+  # OPTIONAL: it does not start unless the environment has COMPOSE_PROFILES=backup, and then it needs
+  # BACKUP_AGE_PUBLIC_KEY, BACKUP_REMOTE and the R2_* settings. Without it nothing is backed up.
   backup:
+    profiles: [backup]
     build:
       context: ./backup
     restart: unless-stopped
@@ -133,8 +138,8 @@ services:
       TZ: ${BACKUP_TZ:-Asia/Kolkata}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      AGE_RECIPIENT: ${BACKUP_AGE_PUBLIC_KEY:?set BACKUP_AGE_PUBLIC_KEY (see docs/runbook.md)}
-      BACKUP_REMOTE: ${BACKUP_REMOTE:?set BACKUP_REMOTE, e.g. r2:my-bucket/prod}
+      AGE_RECIPIENT: ${BACKUP_AGE_PUBLIC_KEY:-}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
       BACKUP_AT: ${BACKUP_AT:-02:30}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
       BACKUP_PING_URL: ${BACKUP_PING_URL:-}

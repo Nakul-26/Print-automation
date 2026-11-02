@@ -2,6 +2,10 @@
 
 ## What is backed up, and what is not
 
+> Backups are **optional** and only run when the environment contains `COMPOSE_PROFILES=backup` (plus
+> the key and R2 settings, see `docs/deployment.md`). If you run without them, the table below shows
+> what you would lose, not what is protected: the database is the only copy.
+
 | Data                                                                                  | Backed up?                               | Why                                                                                                                                |
 | ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL (shops, users, prices, orders, print jobs, settings, audit log, job queue) | **Yes, nightly 02:30 IST**, kept 30 days | This is everything that cannot be recreated.                                                                                       |
