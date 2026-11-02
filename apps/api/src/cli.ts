@@ -22,7 +22,7 @@ Passwords are generated and printed once if not supplied. Shops are created acti
 const generatePassword = (): string => randomBytes(12).toString('base64url');
 
 /** The roles a developer needs to try the app with. Emails and passwords come from .env.dev-accounts. */
-const DEV_ACCOUNT_KEYS = ['ADMIN', 'OWNER', 'STAFF', 'PENDING_OWNER'] as const;
+type DevAccountKey = 'ADMIN' | 'OWNER' | 'STAFF' | 'PENDING_OWNER';
 
 function readEnvFile(file: string): Record<string, string> {
   const values: Record<string, string> = {};
@@ -55,7 +55,7 @@ async function seedDevAccounts(
     );
   }
   const values = readEnvFile(fileURLToPath(file));
-  const account = (key: (typeof DEV_ACCOUNT_KEYS)[number]) => {
+  const account = (key: DevAccountKey) => {
     const email = values[`DEV_${key}_EMAIL`];
     const password = values[`DEV_${key}_PASSWORD`];
     if (!email || !password)
@@ -64,11 +64,7 @@ async function seedDevAccounts(
   };
 
   const users = container.identity.users;
-  async function ensureUser(
-    key: (typeof DEV_ACCOUNT_KEYS)[number],
-    name: string,
-    platformRole?: 'platform_admin',
-  ) {
+  async function ensureUser(key: DevAccountKey, name: string, platformRole?: 'platform_admin') {
     const { email, password } = account(key);
     let user = await users.findByEmail(email);
     if (user) await users.setPassword(user.id, password);

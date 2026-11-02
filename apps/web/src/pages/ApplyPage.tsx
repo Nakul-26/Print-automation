@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
+import { PasswordInput } from '../components/PasswordInput';
 import { Turnstile } from '../components/Turnstile';
 import { Button, Notice } from '../components/ui';
 import { applyApi } from '../lib/admin-api';
@@ -166,14 +167,12 @@ export function ApplyPage() {
         </label>
         <label className="block">
           <span className="text-sm font-medium">Password (at least 10 characters)</span>
-          <input
-            type="password"
+          <PasswordInput
             value={form.password}
             onChange={set('password')}
             required
             minLength={10}
             autoComplete="new-password"
-            className={FIELD}
           />
         </label>
         <Turnstile siteKey={siteKey} onToken={onToken} />

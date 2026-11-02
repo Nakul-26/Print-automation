@@ -74,16 +74,17 @@ hour, most of it installing. To lose less, run `backup.sh once` more often or ch
 
 ## Common incidents
 
-| Symptom                              | Look at / do                                                                                                                                        |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Site down (Cloudflare 502/1033)      | Is the tunnel connector running (`cloudflared`)? Is Dokploy's proxy up? `docker ps`.                                                                |
-| Site loads, uploads fail with "busy" | Normal under a rush (it retries). If constant: `docker stats` (CPU), `/admin` → Limits (storage full?)                                              |
-| "Storage full" for students          | `/admin` → Limits: used vs limit. Raise it, or find a shop with a huge cap. Old files clear nightly/at 90%.                                         |
-| One shop can't print                 | Owner dashboard → Printing: is the PC app connected? Restart the app on the shop PC.                                                                |
-| Power cut                            | PC and Docker start by themselves (see deployment.md). Check backup + site afterwards.                                                              |
-| Suspected abuse of one shop          | `/admin` → Suspend (cuts live connections immediately). Reason is stored in the activity log.                                                       |
-| Lost the age private key             | Create a new pair now, update `BACKUP_AGE_PUBLIC_KEY`, redeploy, take a backup. Old backups are unreadable.                                         |
-| Rotating a leaked secret             | `SESSION_SECRET` (signs everyone out), DB passwords (change in env **and** `ALTER ROLE print_app PASSWORD '…'`), R2 token (create new, update env). |
+| Symptom                                     | Look at / do                                                                                                                                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site down (Cloudflare 502/1033)             | Is the tunnel connector running (`cloudflared`)? Is Dokploy's proxy up? `docker ps`.                                                                                                                                                          |
+| Sign-in says "Cross-origin request blocked" | `APP_ORIGIN` in the Dokploy environment is not the exact address in the browser (for example it still names another domain). Fix it to `https://<your domain>` with no trailing slash and redeploy. Changing domains means changing this too. |
+| Site loads, uploads fail with "busy"        | Normal under a rush (it retries). If constant: `docker stats` (CPU), `/admin` → Limits (storage full?)                                                                                                                                        |
+| "Storage full" for students                 | `/admin` → Limits: used vs limit. Raise it, or find a shop with a huge cap. Old files clear nightly/at 90%.                                                                                                                                   |
+| One shop can't print                        | Owner dashboard → Printing: is the PC app connected? Restart the app on the shop PC.                                                                                                                                                          |
+| Power cut                                   | PC and Docker start by themselves (see deployment.md). Check backup + site afterwards.                                                                                                                                                        |
+| Suspected abuse of one shop                 | `/admin` → Suspend (cuts live connections immediately). Reason is stored in the activity log.                                                                                                                                                 |
+| Lost the age private key                    | Create a new pair now, update `BACKUP_AGE_PUBLIC_KEY`, redeploy, take a backup. Old backups are unreadable.                                                                                                                                   |
+| Rotating a leaked secret                    | `SESSION_SECRET` (signs everyone out), DB passwords (change in env **and** `ALTER ROLE print_app PASSWORD '…'`), R2 token (create new, update env).                                                                                           |
 
 ## Security notes
 

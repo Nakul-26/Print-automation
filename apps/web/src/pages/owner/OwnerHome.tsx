@@ -55,11 +55,7 @@ export function OwnerHome() {
     );
   }
   if (state.kind === 'signed-out') {
-    return (
-      <Shell>
-        <SignInForm title="Shop sign-in" onDone={() => void load()} />
-      </Shell>
-    );
+    return <SignInForm variant="shop" onDone={() => void load()} />;
   }
 
   return (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import type { AdminAuditEntry, AdminSettings, AdminShop } from '@print/contracts';
+import { AuthShell } from '../../components/AuthShell';
 import { SignInForm } from '../../components/SignInForm';
 import { Button, Notice, Spinner } from '../../components/ui';
 import { adminApi } from '../../lib/admin-api';
@@ -51,28 +52,31 @@ export function AdminPage() {
     );
   }
   if (access === 'signed-out') {
-    return (
-      <main className="mx-auto w-full max-w-md px-4 py-10">
-        <SignInForm title="Admin sign-in" onDone={() => void check()} />
-      </main>
-    );
+    return <SignInForm variant="admin" onDone={() => void check()} />;
   }
   if (access === 'forbidden') {
     return (
-      <main className="mx-auto w-full max-w-md px-4 py-10">
-        <h1 className="display text-3xl">Not allowed</h1>
-        <p className="mt-3 text-muted">This account is not a platform admin.</p>
-        <Link to="/owner" className="mt-4 block font-medium text-cyan underline">
-          Go to your shop
-        </Link>
-        <Button
-          variant="secondary"
-          className="mt-3"
-          onClick={() => void ownerApi.logout().then(() => setAccess('signed-out'))}
-        >
-          Sign in as someone else
-        </Button>
-      </main>
+      <AuthShell
+        badge="Platform admin"
+        title="Not allowed"
+        subtitle="This account is not a platform admin."
+      >
+        <div className="space-y-3">
+          <Link
+            to="/owner"
+            className="grid min-h-12 place-items-center rounded-xl bg-cyan px-5 font-semibold text-white"
+          >
+            Go to your shop
+          </Link>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => void ownerApi.logout().then(() => setAccess('signed-out'))}
+          >
+            Sign in as someone else
+          </Button>
+        </div>
+      </AuthShell>
     );
   }
   return <Panel onSignOut={() => void ownerApi.logout().then(() => setAccess('signed-out'))} />;
