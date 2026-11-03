@@ -11,7 +11,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 # The dashboard's printing-app links are baked into the build.
 ARG VITE_AGENT_STORE_URL=
-ARG VITE_AGENT_DOWNLOAD_URL=
+ARG VITE_AGENT_DOWNLOAD_URL=https://github.com/Nakul-26/Print-automation/releases/latest/download/PrintPlatform-PrintingApp-Setup.exe
 ENV VITE_AGENT_STORE_URL=$VITE_AGENT_STORE_URL VITE_AGENT_DOWNLOAD_URL=$VITE_AGENT_DOWNLOAD_URL
 RUN pnpm --filter @print/web build
 

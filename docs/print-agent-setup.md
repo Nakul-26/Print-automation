@@ -2,6 +2,18 @@
 
 For whoever installs the printing app on the shop PC (about five minutes).
 
+## Publishing the installer (once per version, for us)
+
+The owner dashboard's **Set up printing** page has a "Download the installer" button. It points to the
+latest GitHub release file named exactly `PrintPlatform-PrintingApp-Setup.exe`. To publish a new version:
+
+1. `pnpm --filter @print/agent pack:installer` (the production address `https://print.fortifyhub.net`
+   is built in; set `PRINT_SERVER_URL` to build for another server).
+2. On GitHub: Releases → Draft a new release → attach `apps/agent/release/PrintPlatform-PrintingApp-<version>-Setup.exe`
+   renamed to `PrintPlatform-PrintingApp-Setup.exe` → Publish.
+
+## Installing at a shop
+
 1. **Install the app** on the computer the printers are connected to (installer file, or the
    Microsoft Store once it is published). Both printers must already work from that computer.
 2. On the owner dashboard press **Set up printing → Show a code**. A six-digit code appears (valid

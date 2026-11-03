@@ -115,7 +115,7 @@ services:
       args:
         # Where the shop dashboard sends owners to get the printing app (leave empty to hide).
         VITE_AGENT_STORE_URL: ${VITE_AGENT_STORE_URL:-}
-        VITE_AGENT_DOWNLOAD_URL: ${VITE_AGENT_DOWNLOAD_URL:-}
+        VITE_AGENT_DOWNLOAD_URL: ${VITE_AGENT_DOWNLOAD_URL:-https://github.com/Nakul-26/Print-automation/releases/latest/download/PrintPlatform-PrintingApp-Setup.exe}
     restart: unless-stopped
     logging: *logging
     depends_on:

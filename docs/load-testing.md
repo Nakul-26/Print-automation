@@ -41,11 +41,13 @@ beyond that you gain nothing. Record the result below.
 
 ## Results
 
-| Date       | Machine                                   | Burst                                   | 95th pct ready       | Notes                                                              |
-| ---------- | ----------------------------------------- | --------------------------------------- | -------------------- | ------------------------------------------------------------------ |
-| 2026-10-12 | Developer PC, production images, 1 worker | 150 students in 6 s, 30 pages, previews | 19 s, all 150 served | Baseline only. The worker planned 1 job at a time on this machine. |
-| 2026-10-12 | same                                      | 40 students in 10 s, 12 pages           | 1.5 s                |                                                                    |
-| _pending_  | **Your Linux server, staging**            |                                         |                      | Run before the pilot.                                              |
+| Date       | Machine                                                                  | Burst                                   | 95th pct ready        | Notes                                                              |
+| ---------- | ------------------------------------------------------------------------ | --------------------------------------- | --------------------- | ------------------------------------------------------------------ |
+| 2026-10-12 | Developer PC, production images, 1 worker                                | 150 students in 6 s, 30 pages, previews | 19 s, all 150 served  | Baseline only. The worker planned 1 job at a time on this machine. |
+| 2026-10-12 | same                                                                     | 40 students in 10 s, 12 pages           | 1.5 s                 |                                                                    |
+| 2026-11-03 | college-server2 (12 cores), production images, throw-away copy, 1 worker | 60 students in 10 s, 15 pages           | 0.8 s                 | Worker used ~1.6 cores.                                            |
+| 2026-11-03 | same, 1 worker                                                           | 150 students in 6 s, 30 pages, previews | 9.2 s, all served     | 91 files queued at the peak.                                       |
+| 2026-11-03 | same, **3 workers**                                                      | 150 students in 6 s, 30 pages, previews | **0.7 s**, all served | No errors. Load generator ran on the same machine.                 |
 
 The first row proves the system queues a burst correctly and serves everyone (a single connection hit
 the per-visitor limit first, as designed). It says nothing about your server's speed; the last row
